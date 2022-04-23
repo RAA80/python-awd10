@@ -1,0 +1,302 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from __future__ import print_function
+
+import argparse
+import threading
+import struct
+import time
+from serial import Serial
+
+from awd10.device import AWD10
+from awd10.client import (CMD_ECHO, CMD_EXEC_CMD, CMD_GET_PARAM, CMD_GET_RESULT,
+                          CMD_SET_PARAM, CMD_ENROT, CMD_RESET, CMD_SETROT, CMD_STOP)
+
+
+class SimAWD10():
+    def __init__(self, port, unit):
+        self.state = dict();                    self.answer = dict()
+        self.state['FB'] = False;               self.answer['Address'] = 0
+        self.state['SkipLim'] = False;          self.answer['Command'] = 0
+        self.state['LimDrop'] = False;          self.answer['Param1'] = 0
+        self.state['StopDrop'] = False;         self.answer['Param0'] = 0
+        self.state['IntrfEN'] = False;          self.answer['Data1'] = 0
+        self.state['IntrfVal'] = False;         self.answer['Data0'] = 0
+        self.state['IntrfDir'] = False;         self.answer['Status'] = 0
+        self.state['SrcParam'] = False;         self.answer['CS'] = 0
+        self.state['SkipCV'] = False
+        self.state['Mode'] = 0
+        self.state['StOverCur'] = False
+        self.state['StMaxPWM'] = False
+        self.state['StDirFrwRev'] = False
+        self.state['StMotAct'] = False
+        self.state['StInRev'] = False
+        self.state['StInFrw'] = False
+        self.state['StLimRev'] = False
+        self.state['StLimFrw'] = False
+
+        self.param = AWD10["param"]
+        for key in self.param:
+            self.param[key].update(value=0)
+        self.param["Address"]['value'] = unit
+
+        self.rslt = AWD10["result"]
+        for key in self.rslt:
+            self.rslt[key].update(value=0)
+
+        self.unit = unit
+        self.speed = 0
+        self.drv = None
+
+        try:
+            self.port = Serial(port=port)   # default 9600-8-N-1, timeout=None
+        except Exception as err:
+            print (err)
+            exit(0)
+
+        self.drv = Driver(self.state, self.speed)
+        self.drv.daemon = True
+        self.drv.start()
+
+        self.start()
+
+    def __del__(self):
+        if self.drv:
+            self.drv.stop()
+            self.drv.join()
+
+    def start(self):
+        while True:
+            self.read()
+
+    def read(self):
+        try:
+            readed = self.port.read(8)
+            request = struct.unpack(">8B", readed)
+        except KeyboardInterrupt:
+            exit(0)
+        except Exception:
+            print ("Bad request")
+            return
+
+        if self.unit == request[0]:
+            address = request[0]
+            command = request[1]
+            param = request[2]
+            data = (request[4]<<8) + request[5]
+            status = request[6]
+            crc = request[7]
+
+            if crc != -sum(request[0:7]) & 0xFF:
+                self.send_error(0xE1)                       # Wrong request CRC
+            else:
+                if command == CMD_ECHO:
+                    self.answer['Address'] = self.unit
+                    self.answer['Command'] = command
+                    self.answer['Param1'] = 0x41
+                    self.answer['Param0'] = 0x57
+                    self.answer['Data1'] = 0x44
+                    self.answer['Data0'] = 0x00
+
+                elif command == CMD_EXEC_CMD:
+                    if param == CMD_RESET:
+                        self.state['FB'] = False
+                        self.state['SkipLim'] = False
+                        self.state['LimDrop'] = False
+                        self.state['StopDrop'] = False
+                        self.state['IntrfEN'] = False
+                        self.state['IntrfVal'] = False
+                        self.state['IntrfDir'] = False
+                        self.state['SrcParam'] = False
+                        self.state['SkipCV'] = False
+                        self.state['Mode'] = 0
+                        self.state['StOverCur'] = False
+                        self.state['StMaxPWM'] = False
+                        self.state['StDirFrwRev'] = False
+                        self.state['StMotAct'] = False
+                        self.state['StInRev'] = False
+                        self.state['StInFrw'] = False
+                        self.state['StLimRev'] = False
+                        self.state['StLimFrw'] = False
+
+                        self.answer['Address'] = self.unit
+                        self.answer['Command'] = command
+                        self.answer['Param1'] = param
+                        self.answer['Param0'] = 0x00
+                        self.answer['Data1'] = 0x00
+                        self.answer['Data0'] = 0x00
+
+                    elif param == CMD_ENROT or param == CMD_STOP:
+                        self.answer['Address'] = self.unit
+                        self.answer['Command'] = command
+                        self.answer['Param1'] = param
+                        self.answer['Param0'] = 0x00
+                        self.answer['Data1'] = 0x00
+                        self.answer['Data0'] = 0x00
+
+                    elif param == CMD_SETROT:
+                        if request[4] & (1<<7):
+                            data -= 65536
+
+                        self.drv.speed = data
+
+                        self.answer['Address'] = self.unit
+                        self.answer['Command'] = command
+                        self.answer['Param1'] = param
+                        self.answer['Param0'] = 0x00
+                        self.answer['Data1'] = (abs(data) & 0xFF00) >> 8
+                        self.answer['Data0'] = abs(data) & 0x00FF
+
+                    else:
+                        self.send_error(0xC3)               # Wrong command parameter
+
+                elif command == CMD_GET_RESULT:
+                    self.answer['Address'] = self.unit
+                    self.answer['Command'] = command
+                    self.answer['Param1'] = param
+                    self.answer['Param0'] = 0x00
+
+                    if param == self.rslt["Status"]['code']:
+                        unit_status = self.status()
+                        self.answer['Data1'] = (unit_status & 0xFF00) >> 8
+                        self.answer['Data0'] = unit_status & 0x00FF
+
+                    elif param == self.rslt["Speed"]['code']:
+                        self.answer['Data1'] = (self.drv.speed & 0xFF00) >> 8
+                        self.answer['Data0'] = self.drv.speed & 0x00FF
+
+                    elif param == self.rslt["PDM"]['code']:
+                        self.answer['Data1'] = (self.rslt["PDM"]['value'] & 0xFF00) >> 8
+                        self.answer['Data0'] = self.rslt["PDM"]['value'] & 0x00FF
+
+                    elif param == self.rslt["ADC1"]['code']:
+                        self.answer['Data1'] = (self.rslt["ADC1"]['value'] & 0xFF00) >> 8
+                        self.answer['Data0'] = self.rslt["ADC1"]['value'] & 0x00FF
+
+                    elif param == self.rslt["ADC2"]['code']:
+                        self.answer['Data1'] = (self.rslt["ADC2"]['value'] & 0xFF00) >> 8
+                        self.answer['Data0'] = self.rslt["ADC2"]['value'] & 0x00FF
+
+                    else:
+                        self.send_error(0xC3)               # Wrong command parameter
+
+                elif command == CMD_GET_PARAM:
+                    try:
+                        key = self._search_key(param)
+                        self.get_param(command, param, key)
+                    except IndexError:
+                        self.send_error(0xC3)               # Wrong command parameter
+
+                elif command == CMD_SET_PARAM:
+                    try:
+                        key = self._search_key(param)
+                        if key == "Address":
+                            self.unit = data
+                        self.set_param(command, param, key, data)
+                    except IndexError:
+                        self.send_error(0xC3)               # Wrong command parameter
+
+                else:
+                    self.send_error(0xD2)                   # Wrong command
+            self.write()
+
+    def write(self):
+        packet = bytearray([self.answer['Address'],
+                            self.answer['Command'],
+                            self.answer['Param1'],
+                            self.answer['Param0'],
+                            self.answer['Data1'],
+                            self.answer['Data0'],
+                            self.status(),
+                            0x00])
+        packet[7] = -sum(packet) & 0xFF
+        writed = self.port.write(packet)
+
+    def status(self):
+        return int("{:b}{:b}{:b}{:b}{:b}{:b}{:b}{:b}".format(self.state['StOverCur'],
+                                                             self.state['StMaxPWM'],
+                                                             self.state['StDirFrwRev'],
+                                                             self.state['StMotAct'],
+                                                             self.state['StInRev'],
+                                                             self.state['StInFrw'],
+                                                             self.state['StLimRev'],
+                                                             self.state['StLimFrw']),
+                                                             2)
+
+    def get_param(self, command, param, key):
+        self.answer['Address'] = self.unit
+        self.answer['Command'] = command
+        self.answer['Param1'] = param
+        self.answer['Param0'] = 0
+        self.answer['Data1'] = (self.param[key]['value'] & 0xFF00) >> 8
+        self.answer['Data0'] = self.param[key]['value'] & 0x00FF
+
+    def set_param(self, command, param, key, value):
+        self.param[key]['value'] = value
+        self.get_param(command, param, key)
+
+    def _search_key(self, param):
+        key = [key for key in self.param if param == self.param[key]['code']]
+        return key[0]
+
+    def send_error(self, errcode):
+        self.answer['Address'] = self.unit
+        self.answer['Command'] = errcode
+        self.answer['Param1'] = 0x00
+        self.answer['Param0'] = 0x00
+        self.answer['Data1'] = 0x00
+        self.answer['Data0'] = 0x00
+
+
+class Driver(threading.Thread):
+    def __init__(self, state, speed):
+        threading.Thread.__init__(self)
+
+        self.state = state
+        self.speed = speed
+        self.position = 0
+        self.flag = False
+
+    def run(self):
+        while not self.flag:
+            if self.speed > 0:
+                self.position += self.speed
+                self.state['StMotAct'] = True
+                self.state['StDirFrwRev'] = True
+            elif self.speed < 0:
+                self.position += self.speed
+                self.state['StMotAct'] = True
+                self.state['StDirFrwRev'] = False
+            else:
+                self.state['StMotAct'] = False
+
+            if self.position >= 10000:
+                self.position = 10000
+                self.state['StLimFrw'] = False
+            elif self.position <= -10000:
+                self.position = -10000
+                self.state['StLimRev'] = False
+            else:
+                self.state['StLimFrw'] = True
+                self.state['StLimRev'] = True
+
+            print ("speed: {:5d}, position: {:6d}".format(self.speed, self.position), end='\r')
+            time.sleep(1.0)
+
+    def stop(self):
+        self.flag = True
+
+
+def Process(args):
+    SimAWD10(port=args.port, unit=args.unit)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='AWD10 simulator command-line option')
+    parser.add_argument('--port', type=str, nargs='?', const='COM1', required=True, help='Set used port name')
+    parser.add_argument('--unit', type=int, nargs='?', const=5, required=True, help='Set used AWD10 address')
+    parser.set_defaults(func=Process)
+
+    args = parser.parse_args()
+    args.func(args)

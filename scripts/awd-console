@@ -1,0 +1,84 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import logging
+import argparse
+from serial import Serial
+
+from awd10.client import Client
+from awd10.device import AWD10
+
+_param_keys = sorted(AWD10["param"].keys())
+_result_keys = sorted(AWD10["result"].keys())
+
+
+def Process(args):
+    _timeout = args.timeout if args.timeout is not None else 0.1
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if args.scan:
+        for unit in range(1, 256):
+            transport = Serial(port=args.port, timeout=_timeout)
+            id_awd10 = Client(transport=transport, device=AWD10, unit=unit)
+
+            if id_awd10.echo():
+                print ("Unit: {} - OK".format(unit))
+
+            del (id_awd10)
+    else:
+        transport = Serial(port=args.port, timeout=_timeout)
+        id_awd10 = Client(transport=transport, device=AWD10, unit=args.unit)
+
+        if args.echo:
+            print (id_awd10.echo())
+        elif args.state:
+            print (id_awd10.state())
+        elif args.reset:
+            print (id_awd10.reset())
+        elif args.move:
+            print (id_awd10.move(args.move[0]))
+        elif args.get:
+            print ("{} = {}".format(args.get[0], id_awd10.getParam(args.get[0])))
+        elif args.set:
+            print ("WARNING: Before change board mode, you MUST run --stop command")
+            print (id_awd10.setParam(args.set[0], int(args.set[1])))
+        elif args.stop:
+            print (id_awd10.stop())
+        elif args.enrot:
+            print (id_awd10.enrot())
+        elif args.result:
+            print (id_awd10.result(args.result[0]))
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='AWD10 command-line option')
+
+    parser.add_argument('--port', type=str, nargs='?', const='COM1', required=True, help='Set used port name')
+    parser.add_argument('--timeout', type=float, nargs='?', metavar=('VALUE'), const=0.1, help='Set used timeout in second')
+    parser.add_argument('--debug', action='store_true', help='Print debug information')
+
+    group1 = parser.add_argument_group('Scanner')
+    group1.add_argument('--scan', action='store_true', help='Scan available modules')
+
+    group2 = parser.add_argument_group('User')
+    group2.add_argument('--unit', type=int, nargs='?', const=5, help='Set used AWD10 address')
+
+    group2_ex = group2.add_mutually_exclusive_group()
+    group2_ex.add_argument('--echo', action='store_true', help='Send ECHO request')
+    group2_ex.add_argument('--reset', action='store_true', help='Send RESET request')
+    group2_ex.add_argument('--state', action='store_true', help='Read AWD10 state')
+    group2_ex.add_argument('--get', type=str, nargs=1, metavar=('KEY'), choices=_param_keys,
+                                    help='Read config value. Possible KEY values: ' + str(_param_keys))
+    group2_ex.add_argument('--set', type=str, nargs=2, metavar=('KEY', 'VALUE'),
+                                    help='Write config value. See --get for possible KEY values')
+    group2_ex.add_argument('--move', type=int, nargs=1, metavar=('SPEED'), help='Send MOVE command')
+    group2_ex.add_argument('--stop', action='store_true', help='Send STOP request')
+    group2_ex.add_argument('--enrot', action='store_true', help='Send ENROT request')
+    group2_ex.add_argument('--result', type=str, nargs=1, metavar=('KEY'), choices=_result_keys,
+                                    help='Read result value. Possible KEY values: ' + str(_result_keys))
+
+    parser.set_defaults(func=Process)
+
+    args = parser.parse_args()
+    args.func(args)
