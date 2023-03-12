@@ -138,9 +138,9 @@ class Client(object):
 
         _dev = self._device["param"][name]
 
-        if value < _dev['min'] or value > _dev['max']:
-            raise ValueError("Parameter [{}] out of range ({}, {})".
-                             format(name, _dev['min'], _dev['max']))
+        if value is None or value < _dev['min'] or value > _dev['max']:
+            raise ValueError("Parameter '{}' out of range ({}, {}) value '{}'".
+                             format(name, _dev['min'], _dev['max'], value))
 
         request = {'command': CMD_SET_PARAM,
                    'param':   _dev['code'],
