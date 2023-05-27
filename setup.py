@@ -5,7 +5,7 @@ from distutils.core import setup
 
 
 setup(name="python-awd10",
-      version='0.2',
+      version='0.2.1',
       description='AWD10 controller module',
       url='https://github.com/RAA80/python-awd10',
       author='Ryadno Alexey',

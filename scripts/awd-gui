@@ -28,7 +28,7 @@ else:
 try:
     import tkinter as Tkinter       # for Python3
     from tkinter import ttk
-except:
+except ImportError:
     import Tkinter                  # for Python2
     import ttk
 
@@ -69,7 +69,7 @@ class CreateToolTip(object):
             self.tw.destroy()
 
 
-class AwdGui():
+class AwdGui(object):
     def __init__(self):
         self.root = Tkinter.Tk()
         self.root.title("AWD10 GUI")
@@ -98,7 +98,7 @@ class AwdGui():
 
         iterator = sorted(comports())
         for n, (port, desc, hwid) in enumerate(iterator, 1):
-            iid = self.portlist.insert("" , "end", values=port)
+            iid = self.portlist.insert("", "end", values=port)
             self.port_iid.append(iid)
 
         port_scroll = ttk.Scrollbar(portframe, orient="vertical", command=self.portlist.yview)
@@ -122,7 +122,7 @@ class AwdGui():
         devframe = ttk.LabelFrame(frame_scan, text="Список активных модулей AWD10", labelanchor='n')
         devframe.pack(side="top", fill="both", pady=2, padx=2, expand=True)
 
-        self.modulelist = ttk.Treeview(devframe, columns=("address","baudrate"), selectmode='browse', height=5, show="headings")
+        self.modulelist = ttk.Treeview(devframe, columns=("address", "baudrate"), selectmode='browse', height=5, show="headings")
         self.modulelist.column("address", width=100, anchor='center')
         self.modulelist.column("baudrate", width=100, anchor='center')
         self.modulelist.heading("address", text="Адрес")
@@ -370,7 +370,7 @@ class AwdGui():
         self.buttonConfig.pack(side="left", fill="x", padx=2)
         CreateToolTip(self.buttonConfig, '''Записать настройки в модуль AWD10''')
 
-        print ("Start GUI ...")
+        print("Start GUI ...")
         self.root.mainloop()
 
     def __del__(self):
@@ -383,7 +383,7 @@ class AwdGui():
     def Button_Config(self):
         key = self.varcomboCode.get()
 
-        if key=="BoardMode":
+        if key == "BoardMode":
             self.id_awd10.stop()
             value = int("{:b}{:b}{:b}{:b}{:b}{:b}{:b}{:b}0000{:b}{:03b}".format(self.varFB_new.get(),
                                                                                 self.varSkipLim_new.get(),
@@ -396,9 +396,9 @@ class AwdGui():
                                                                                 self.varSkipCV_new.get(),
                                                                                 self.varMode_new.get()),
                                                                                 2)
-            self.id_awd10.setParam(key, value)
+            self.id_awd10.set_param(key, value)
         else:
-            self.id_awd10.setParam(key, int(self.spinValue.get()))
+            self.id_awd10.set_param(key, int(self.spinValue.get()))
 
     def Tick(self):
         self.tick_task = self.root.after(500, self.Tick)
@@ -461,7 +461,7 @@ class AwdGui():
             self.buttonConfig.config(state="normal")
             CreateToolTip(self.comboCode, '''Код параметра модуля AWD10''')
 
-        val = self.id_awd10.getParam(key)
+        val = self.id_awd10.get_param(key)
         self.varCurVal.set(val)
 
         var = Tkinter.IntVar()
@@ -486,7 +486,7 @@ class AwdGui():
             selected_unit = int(selected_unit)
             selected_baudrate = int(selected_baudrate)
 
-        print ("Selected module {} with baudrate {} at port {}".
+        print("Selected module {} with baudrate {} at port {}".
                 format(selected_unit, selected_baudrate, selected_port))
 
         if self.transport:
@@ -556,7 +556,7 @@ class AwdGui():
         for item in self.portlist.selection():
             selected_port = self.portlist.item(item, "values")[0]
 
-        print ("Start scanning port {}".format(selected_port))
+        print("Start scanning port {}".format(selected_port))
 
         loglevel = logging.DEBUG if self.varDebug.get() else 100
         _logger.setLevel(loglevel)
@@ -567,15 +567,15 @@ class AwdGui():
                 id_awd10 = Client(transport=transport, device=AWD10, unit=unit)
 
                 if id_awd10.echo():
-                    iid = self.modulelist.insert("" , "end", values=(unit, baudrate))
+                    iid = self.modulelist.insert("", "end", values=(unit, baudrate))
                     self.module_iid.append(iid)
 
                 self.root.update()
 
-                del (id_awd10)
+                del id_awd10
                 self.progressbar.step(1)
 
-        print ("Stop scanning port {}".format(selected_port))
+        print("Stop scanning port {}".format(selected_port))
 
         self.progressbar.pack_forget()
         self.buttonScan.pack(side="top", fill="x", pady=2)
@@ -583,4 +583,4 @@ class AwdGui():
 
 if __name__ == "__main__":
     AwdGui()
-    print ("Done")
+    print("Done")

@@ -39,48 +39,31 @@ class Client(object):
             self._transport.close()
 
     def __repr__(self):
-        return ("Client(transport={}, unit={})".format(self._transport,
-                                                       self._unit))
+        return "Client(transport={}, unit={})".format(self._transport, self._unit)
 
     def _verify(self, request, answer):
         if answer:
-            error = 0 if request[1] == answer[1] else answer[1]
-            crc = -sum(answer[0:7]) & 0xFF == answer[7]
-
-            if crc and (not error):
+            if -sum(answer[:7]) & 0xFF != answer[7]:
+                _logger.error("AwdProtocolError: unit %d crc error", answer[0])
+            elif request[1] != answer[1]:
+                _logger.error("AwdProtocolError: unit %d errorcode %02X", answer[0], answer[1])
+            else:
                 return True
-            elif not crc:
-                _logger.error("AwdProtocolError: unit {} crc error".
-                                    format(answer[0]))
-            elif error:
-                _logger.error("AwdProtocolError: unit {} errorcode {:X}".
-                                    format(answer[0], error))
         else:
-            _logger.error("AwdProtocolError: unit {} has no answer".
-                           format(request[0]))
+            _logger.error("AwdProtocolError: unit %d has no answer", request[0])
 
-    def _make_packet(self, request):
-        packet = bytearray([self._unit,                         # AWD10 address
-                            request['command'],                 # Command code
-                            request['param'],                   # Parameter code
+    def _make_packet(self, command, param, data):
+        packet = bytearray([self._unit,             # AWD10 address
+                            command,                # Command code
+                            param,                  # Parameter code
                             0x00,
-                            (request['data'] & 0xFF00) >> 8,    # Data (High byte)
-                            request['data'] & 0x00FF,           # Data (Low byte)
-                            0x00,                               # Status
-                            0x00])                              # Checksum
+                            (data & 0xFF00) >> 8,   # Data (High byte)
+                            data & 0x00FF,          # Data (Low byte)
+                            0x00,                   # Status
+                            0x00])                  # Checksum
         packet[7] = -sum(packet) & 0xFF
 
         return packet
-
-    def _in_waiting(self):
-        in_waiting = ("in_waiting" if hasattr(
-            self._transport, "in_waiting") else "inWaiting")
-
-        if in_waiting == "in_waiting":
-            waitingbytes = getattr(self._transport, in_waiting)
-        else:
-            waitingbytes = getattr(self._transport, in_waiting)()
-        return waitingbytes
 
     def _wait_for_data(self, nbytes=None):
         size = 0
@@ -93,7 +76,7 @@ class Client(object):
             condition = partial(lambda dummy1, dummy2: True, dummy2=None)
         start = time.time()
         while condition(start):
-            avaialble = self._in_waiting()
+            avaialble = self._transport.in_waiting
             if (more_data and not avaialble) or (more_data and avaialble == size) or (nbytes == size):
                 break
             if avaialble and avaialble != size:
@@ -102,51 +85,46 @@ class Client(object):
             time.sleep(0.01)
         return size
 
-    def _getPingPong(self, request):
+    def _bus_exchange(self, packet):
         self._transport.reset_input_buffer()
         self._transport.reset_output_buffer()
 
-        packet = self._make_packet(request)
-        writed = self._transport.write(packet)
-
+        self._transport.write(packet)
         size = self._wait_for_data(8)
-        answer = self._transport.read(size)
+
+        return self._transport.read(size)
+
+    def _send_message(self, command, param, data):
+        packet = self._make_packet(command, param, data)
+        _logger.debug("Send frame = %s", list(packet))
+
+        answer = self._bus_exchange(packet)
         try:
             answer = struct.unpack("!8B", answer)
         except struct.error as msg:
-            _logger.error("AwdProtocolError: {}".format(msg))
+            _logger.error("AwdProtocolError: %s", msg)
             answer = None
 
-        _logger.debug("Send frame = {}".format(list(bytearray(packet))))
-        _logger.debug("Recv frame = {}".format(answer))
-
+        _logger.debug("Recv frame = %s", answer)
         return packet, answer
 
-    def getParam(self, name):           # Таблица 7 из руководства по эксплуатации
+    def get_param(self, name):          # Таблица 7 из руководства по эксплуатации
         ''' Чтение значения параметра по заданному имени '''
 
-        request = {'command': CMD_GET_PARAM,
-                   'param':   self._device["param"][name]['code'],
-                   'data':    0x0000}
-        packet, answer = self._getPingPong(request)
-
+        param = self._device["param"][name]['code']
+        packet, answer = self._send_message(CMD_GET_PARAM, param, 0x0000)
         if self._verify(packet, answer):
             return (answer[4] << 8) + answer[5]
 
-    def setParam(self, name, value):    # Таблица 7 из руководства по эксплуатации
+    def set_param(self, name, value):   # Таблица 7 из руководства по эксплуатации
         ''' Запись значения параметра по заданному имени '''
 
         _dev = self._device["param"][name]
-
         if value is None or value < _dev['min'] or value > _dev['max']:
             raise ValueError("Parameter '{}' out of range ({}, {}) value '{}'".
                              format(name, _dev['min'], _dev['max'], value))
 
-        request = {'command': CMD_SET_PARAM,
-                   'param':   _dev['code'],
-                   'data':    int(value)}
-        packet, answer = self._getPingPong(request)
-
+        packet, answer = self._send_message(CMD_SET_PARAM, _dev['code'], int(value))
         return self._verify(packet, answer)
 
     def move(self, speed=0):
@@ -154,49 +132,38 @@ class Client(object):
             Если скорость не указана или равна 0 происходит остановка движения
         '''
 
-        request = {'command': CMD_EXEC_CMD,
-                   'param':   CMD_SETROT,
-                   'data':    int(speed)}
-        packet, answer = self._getPingPong(request)
-
+        data = int(speed & 0xFFFF)
+        packet, answer = self._send_message(CMD_EXEC_CMD, CMD_SETROT, data)
         return self._verify(packet, answer)
 
     def state(self):
         ''' Чтение состояния '''
 
-        request = {'command': CMD_GET_PARAM,
-                   'param':   0x1C,
-                   'data':    0x0000}
-        packet, answer = self._getPingPong(request)
-
+        packet, answer = self._send_message(CMD_GET_PARAM, 0x1C, 0x0000)
         if self._verify(packet, answer):
-            return {'FB':          bool(answer[4] & (1<<7)),    # Управление обратной связью
-                    'SkipLim':     bool(answer[4] & (1<<6)),    # Не использовать входы концевых выключателей
-                    'LimDrop':     bool(answer[4] & (1<<5)),    # При срабатывании концевого выключателя не удерживать двигатель
-                    'StopDrop':    bool(answer[4] & (1<<4)),    # При остановке вращения не удерживать двигатель
-                    'IntrfEN':     bool(answer[4] & (1<<3)),    # Управлять разрешением режима «слежения» через интерфейс RS485
-                    'IntrfVal':    bool(answer[4] & (1<<2)),    # Управлять величиной скорости или момента через интерфейс RS485
-                    'IntrfDir':    bool(answer[4] & (1<<1)),    # Управлять направлением через интерфейс RS485
-                    'SrcParam':    bool(answer[4] & (1<<0)),    # Выбор источника опорного сигнала
-                    'SkipCV':      bool(answer[5] & (1<<3)),    # Способ обработки контрольной суммы в поле CS
-                    'Mode':        answer[5] & 0x07,            # Режим платы
-                    'StOverCur':   bool(answer[6] & (1<<7)),    # Индикатор токовой зашиты
-                    'StMaxPWM':    bool(answer[6] & (1<<6)),    # Индикатор максимального управляющего сигнала (ШИМ)
-                    'StDirFrwRev': bool(answer[6] & (1<<5)),    # Индикатор направления вращения
-                    'StMotAct':    bool(answer[6] & (1<<4)),    # Признак вращения двигателя
-                    'StInRev':     bool(answer[6] & (1<<3)),    # Состояние входа «движение назад» Rev
-                    'StInFrw':     bool(answer[6] & (1<<2)),    # Состояние входа «движение вперед» Forw
-                    'StLimRev':    bool(answer[6] & (1<<1)),    # Состояние входа «концевой выключатель «движение назад» LRev
-                    'StLimFrw':    bool(answer[6] & (1<<0))}    # Состояние входа «концевой выключатель «движение вперед» LFrw
+            return {'FB':          bool(answer[4]>>7 & 1),  # Управление обратной связью
+                    'SkipLim':     bool(answer[4]>>6 & 1),  # Не использовать входы концевых выключателей
+                    'LimDrop':     bool(answer[4]>>5 & 1),  # При срабатывании концевого выключателя не удерживать двигатель
+                    'StopDrop':    bool(answer[4]>>4 & 1),  # При остановке вращения не удерживать двигатель
+                    'IntrfEN':     bool(answer[4]>>3 & 1),  # Управлять разрешением режима «слежения» через интерфейс RS485
+                    'IntrfVal':    bool(answer[4]>>2 & 1),  # Управлять величиной скорости или момента через интерфейс RS485
+                    'IntrfDir':    bool(answer[4]>>1 & 1),  # Управлять направлением через интерфейс RS485
+                    'SrcParam':    bool(answer[4]>>0 & 1),  # Выбор источника опорного сигнала
+                    'SkipCV':      bool(answer[5]>>3 & 1),  # Способ обработки контрольной суммы в поле CS
+                    'Mode':        answer[5] & 0x07,        # Режим платы
+                    'StOverCur':   bool(answer[6]>>7 & 1),  # Индикатор токовой зашиты
+                    'StMaxPWM':    bool(answer[6]>>6 & 1),  # Индикатор максимального управляющего сигнала (ШИМ)
+                    'StDirFrwRev': bool(answer[6]>>5 & 1),  # Индикатор направления вращения
+                    'StMotAct':    bool(answer[6]>>4 & 1),  # Признак вращения двигателя
+                    'StInRev':     bool(answer[6]>>3 & 1),  # Состояние входа «движение назад» Rev
+                    'StInFrw':     bool(answer[6]>>2 & 1),  # Состояние входа «движение вперед» Forw
+                    'StLimRev':    bool(answer[6]>>1 & 1),  # Состояние входа «концевой выключатель «движение назад» LRev
+                    'StLimFrw':    bool(answer[6]>>0 & 1)}  # Состояние входа «концевой выключатель «движение вперед» LFrw
 
     def reset(self):
         ''' Перезагрузка контроллера. Все параметры сбрасываются, движение прекращается '''
 
-        request = {'command': CMD_EXEC_CMD,
-                   'param':   CMD_RESET,
-                   'data':    0x0000}
-        packet, answer = self._getPingPong(request)
-
+        packet, answer = self._send_message(CMD_EXEC_CMD, CMD_RESET, 0x0000)
         return self._verify(packet, answer)
 
     def echo(self):
@@ -204,42 +171,27 @@ class Client(object):
             Если устройство доступно возвратится True, иначе False
         '''
 
-        request = {'command': CMD_ECHO,
-                   'param':   0x0000,
-                   'data':    0x0000}
-        packet, answer = self._getPingPong(request)
-
+        packet, answer = self._send_message(CMD_ECHO, 0x0000, 0x0000)
         if self._verify(packet, answer):
             return answer[2:5] == (0x41, 0x57, 0x44)
 
     def stop(self):
         ''' Закончить выполнение режима '''
 
-        request = {'command': CMD_EXEC_CMD,
-                   'param':   CMD_STOP,
-                   'data':    0x0000}
-        packet, answer = self._getPingPong(request)
-
+        packet, answer = self._send_message(CMD_EXEC_CMD, CMD_STOP, 0x0000)
         return self._verify(packet, answer)
 
     def enrot(self):
         ''' Включить режим слежения за внешним аналоговым сигналом '''
 
-        request = {'command': CMD_EXEC_CMD,
-                   'param':   CMD_ENROT,
-                   'data':    0x0000}
-        packet, answer = self._getPingPong(request)
-
+        packet, answer = self._send_message(CMD_EXEC_CMD, CMD_ENROT, 0x0000)
         return self._verify(packet, answer)
 
     def result(self, name):             # Таблица 9 из руководства по эксплуатации
         ''' Чтение значения текущего состояния параметров двигателя и блока управления '''
 
-        request = {'command': CMD_GET_RESULT,
-                   'param':   self._device["result"][name]['code'],
-                   'data':    0x0000}
-        packet, answer = self._getPingPong(request)
-
+        param = self._device["result"][name]['code']
+        packet, answer = self._send_message(CMD_GET_RESULT, param, 0x0000)
         if self._verify(packet, answer):
             return (answer[4] << 8) + answer[5]
 

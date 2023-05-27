@@ -12,20 +12,17 @@ logging.basicConfig(level=logging.INFO)
 
 
 transport = Serial(port="COM5", timeout=0.1)
-id_awd = Client(transport=transport, device=AWD10, unit=5)
+awd = Client(transport=transport, device=AWD10, unit=5)
+print(awd)
 
-print (id_awd)
-
-print ("Get Address: {}".format(id_awd.getParam("Address")))
-#print ("Set Address: {}".format(id_awd.setParam("Address", 5)))
-print ("Echo: {}".format(id_awd.echo()))
-print ("State: {}".format(id_awd.state()))
-print ("Move: {}".format(id_awd.move(speed=100)))
-
+print("Move: {}".format(awd.move(speed=100)))
 sleep(5)
+print("Move: {}".format(awd.move(speed=0)))
 
-print ("Move: {}".format(id_awd.move(speed=0)))
-print ("Result: {}".format(id_awd.result("Status")))
-
-#print ("Stop: {}".format(id_awd.stop()))
-#print ("Reset: {}".format(id_awd.reset()))
+# print("Get Address: {}".format(awd.get_param("Address")))
+# print("Set Address: {}".format(awd.set_param("Address", 5)))
+# print("Echo: {}".format(awd.echo()))
+# print("State: {}".format(awd.state()))
+# print("Result: {}".format(awd.result("Status")))
+# print("Stop: {}".format(awd.stop()))
+# print("Reset: {}".format(awd.reset()))
