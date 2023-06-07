@@ -120,7 +120,7 @@ class Client(object):
         ''' Запись значения параметра по заданному имени '''
 
         _dev = self._device["param"][name]
-        if value is None or value < _dev['min'] or value > _dev['max']:
+        if value not in range(_dev['min'], _dev['max']+1):
             raise ValueError("Parameter '{}' out of range ({}, {}) value '{}'".
                              format(name, _dev['min'], _dev['max'], value))
 

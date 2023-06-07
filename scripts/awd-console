@@ -12,45 +12,6 @@ _param_keys = sorted(AWD10["param"].keys())
 _result_keys = sorted(AWD10["result"].keys())
 
 
-def Process(args):
-    _timeout = args.timeout if args.timeout is not None else 0.1
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG)
-
-    if args.scan:
-        for unit in range(1, 256):
-            transport = Serial(port=args.port, timeout=_timeout)
-            id_awd10 = Client(transport=transport, device=AWD10, unit=unit)
-
-            if id_awd10.echo():
-                print("Unit: {} - OK".format(unit))
-
-            del id_awd10
-    else:
-        transport = Serial(port=args.port, timeout=_timeout)
-        id_awd10 = Client(transport=transport, device=AWD10, unit=args.unit)
-
-        if args.echo:
-            print(id_awd10.echo())
-        elif args.state:
-            print(id_awd10.state())
-        elif args.reset:
-            print(id_awd10.reset())
-        elif args.move:
-            print(id_awd10.move(args.move[0]))
-        elif args.get:
-            print("{}".format(id_awd10.get_param(args.get[0])))
-        elif args.set:
-            print("WARNING: Run --stop command before change board mode")
-            print(id_awd10.set_param(args.set[0], int(args.set[1])))
-        elif args.stop:
-            print(id_awd10.stop())
-        elif args.enrot:
-            print(id_awd10.enrot())
-        elif args.result:
-            print(id_awd10.result(args.result[0]))
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='AWD10 command-line option')
 
@@ -77,8 +38,41 @@ if __name__ == "__main__":
     group2_ex.add_argument('--enrot', action='store_true', help='Send ENROT request')
     group2_ex.add_argument('--result', type=str, nargs=1, metavar=('KEY'), choices=_result_keys,
                                     help='Read result value. Possible KEY values: ' + str(_result_keys))
-
-    parser.set_defaults(func=Process)
-
     args = parser.parse_args()
-    args.func(args)
+
+    timeout = args.timeout or 0.1
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if args.scan:
+        for unit in range(1, 256):
+            transport = Serial(port=args.port, timeout=timeout)
+            id_awd10 = Client(transport=transport, device=AWD10, unit=unit)
+
+            if id_awd10.echo():
+                print("Unit: {} - OK".format(unit))
+
+            del id_awd10
+    else:
+        transport = Serial(port=args.port, timeout=timeout)
+        id_awd10 = Client(transport=transport, device=AWD10, unit=args.unit)
+
+        if args.echo:
+            print(id_awd10.echo())
+        elif args.state:
+            print(id_awd10.state())
+        elif args.reset:
+            print(id_awd10.reset())
+        elif args.move:
+            print(id_awd10.move(args.move[0]))
+        elif args.get:
+            print(id_awd10.get_param(args.get[0]))
+        elif args.set:
+            print("WARNING: Run --stop command before change board mode")
+            print(id_awd10.set_param(args.set[0], int(args.set[1])))
+        elif args.stop:
+            print(id_awd10.stop())
+        elif args.enrot:
+            print(id_awd10.enrot())
+        elif args.result:
+            print(id_awd10.result(args.result[0]))

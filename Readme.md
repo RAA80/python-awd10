@@ -1,13 +1,8 @@
 ## python-awd10 ##
 
-Библиотека для работы с блоком управления коллекторным двигателем постоянного тока [AWD10](https://ellab.ru/serijnaya-produkcziya/bloki-upravleniya-kollektornyimi-dvigatelyami/awd10.html)
+Библиотека для работы с блоком управления коллекторным двигателем постоянного тока AWD10
 
 ### 1. Работа с консольной версией ###
-
-Программа может работать в двух режимах
-
-- Режим **Scanner**
-- Режим **User**
 
         usage: awd-console [-h] --port [PORT] [--timeout [VALUE]] [--debug] [--scan]
                            [--unit [UNIT]]
@@ -45,29 +40,51 @@
           --result KEY       Read result value. Possible KEY values: ['ADC1', 'ADC2',
                              'PDM', 'Speed', 'Status']
 
-##### Режим Scanner #####
+Программа может работать в двух режимах: **Scanner** и **User**
+
+#### Режим Scanner ####
+
+В этом режиме происходит поиск активных модулей, подключенных к порту
 
 Пример использования режима Scanner:
 
     awd-console --port COM5 --scan
 
-Пример использования режима Scanner с выводом отладочной информации:
+Пример результата работы:
 
-    awd-console --port COM5 --scan --debug
+    Unit: 5 - OK
 
-##### Режим User #####
+#### Режим User ####
 
 Пример использования режима User:
 
-    awd-console --port COM5 --unit 5 --move 100
-    awd-console --port COM5 --unit 5 --get Address
-    awd-console --port COM5 --unit 5 --set Address 5
-    awd-console --port COM5 --unit 5 --echo
-    awd-console --port COM5 --unit 5 --state
+-   Чтение регистра конфигурации режима работы блока управления
 
-Пример использования режима User с выводом отладочной информации:
+        awd-console --port COM5 --unit 5 --state
 
-    awd-console --port COM5 --unit 5 --move 100 --debug
+-   Посылка эхо-запроса
+
+        awd-console --port COM5 --unit 5 --echo
+
+-   Чтение значения параметра контроллера
+
+        awd-console --port COM5 --unit 5 --get Address
+
+-   Запись значения параметра в контроллер
+
+        awd-console --port COM5 --unit 5 --set Address 5
+
+-   Команда движения с постоянной скоростью 100 (или -100 для движения в обратную сторону)
+
+        awd-console --port COM5 --unit 5 --move 100
+
+-   Команда окончания выполнение режима
+
+        awd-console --port COM5 --unit 5 --stop
+
+-   Команда запуска режима слежения за внешним аналоговым сигналом (режим Сл)
+
+        awd-console --port COM5 --unit 5 --enrot
 
 ### 2. Работа с графической версией ###
 

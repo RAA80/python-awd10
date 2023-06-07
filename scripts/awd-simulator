@@ -40,7 +40,7 @@ class SimAWD10(object):
 
     def __del__(self):
         if self.drv:
-            self.drv.stop()
+            self.drv.stop = True
             self.drv.join()
 
     def reset_state(self):
@@ -75,12 +75,9 @@ class SimAWD10(object):
                     self.answer_header(0xE1, 0x00)          # Wrong request CRC
 
                 elif command == CMD_ECHO:
-                    self.answer['Address'] = self.unit
-                    self.answer['Command'] = command
-                    self.answer['Param1'] = 0x41
+                    self.answer_header(command, 0x41)
                     self.answer['Param0'] = 0x57
                     self.answer['Data1'] = 0x44
-                    self.answer['Data0'] = 0x00
 
                 elif command == CMD_EXEC_CMD:
                     if param == CMD_RESET:
@@ -174,10 +171,10 @@ class Driver(threading.Thread):
         self.state = state
         self.speed = speed
         self.position = 0
-        self.flag = False
+        self.stop = False
 
     def run(self):
-        while not self.flag:
+        while not self.stop:
             self.position += self.speed
             self.position = min(self.position, 10000)
             self.position = max(self.position, -10000)
@@ -190,19 +187,11 @@ class Driver(threading.Thread):
             # print("speed: {:5d}, position: {:6d}".format(self.speed, self.position))
             time.sleep(1.0)
 
-    def stop(self):
-        self.flag = True
-
-
-def Process(args):
-    SimAWD10(port=args.port, unit=args.unit)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='AWD10 simulator command-line option')
     parser.add_argument('--port', type=str, nargs='?', const='COM1', required=True, help='Set used port name')
     parser.add_argument('--unit', type=int, nargs='?', const=5, required=True, help='Set used AWD10 address')
-    parser.set_defaults(func=Process)
-
     args = parser.parse_args()
-    args.func(args)
+
+    SimAWD10(port=args.port, unit=args.unit)
