@@ -24,11 +24,9 @@ class SimAWD10(object):
             self.param[key].update(value=0)
         self.param["Address"]['value'] = unit
 
-        self.rslt = AWD10["result"]
-        for key in self.rslt:
-            self.rslt[key].update(value=0)
-
-        self.unit = unit
+        self.result = AWD10["result"]
+        for key in self.result:
+            self.result[key].update(value=0)
 
         self.port = Serial(port=port, timeout=1)   # default 9600-8-N-1
 
@@ -55,15 +53,13 @@ class SimAWD10(object):
         while True:
             try:
                 readed = self.port.read(8)
+                request = struct.unpack(">8B", readed)
             except KeyboardInterrupt:
                 break
-
-            try:
-                request = struct.unpack(">8B", readed)
             except struct.error:
                 continue
 
-            if self.unit == request[0]:
+            if self.param["Address"]['value'] == request[0]:
                 # address = request[0]
                 command = request[1]
                 param = request[2]
@@ -84,7 +80,7 @@ class SimAWD10(object):
                         self.reset_state()
 
                         self.drv.speed = 0
-                        self.set_param(self.rslt, command, param, "Speed", 0)
+                        self.set_param(self.result, command, param, "Speed", 0)
 
                     elif param in [CMD_ENROT, CMD_STOP]:
                         self.answer_header(command, param)
@@ -94,17 +90,17 @@ class SimAWD10(object):
                             data -= 65536
 
                         self.drv.speed = data
-                        self.set_param(self.rslt, command, param, "Speed", abs(data))
+                        self.set_param(self.result, command, param, "Speed", abs(data))
 
                     else:
                         self.answer_header(0xC3, 0x00)      # Wrong command parameter
 
                 elif command == CMD_GET_RESULT:
-                    key = self._search_key(self.rslt, param)
+                    key = self._search_key(self.result, param)
                     if key:
                         if key == "Status":
-                            self.rslt["Status"]['value'] = self.status()
-                        self.get_param(self.rslt, command, param, key)
+                            self.result["Status"]['value'] = self.status()
+                        self.get_param(self.result, command, param, key)
                     else:
                         self.answer_header(0xC3, 0x00)      # Wrong command parameter
 
@@ -119,7 +115,7 @@ class SimAWD10(object):
                     key = self._search_key(self.param, param)
                     if key:
                         if key == "Address":
-                            self.unit = data
+                            self.param["Address"]['value'] = data
                         self.set_param(self.param, command, param, key, data)
                     else:
                         self.answer_header(0xC3, 0x00)      # Wrong command parameter
@@ -144,7 +140,7 @@ class SimAWD10(object):
                                      2)
 
     def answer_header(self, command, param):
-        self.answer['Address'] = self.unit
+        self.answer['Address'] = self.param["Address"]['value']
         self.answer['Command'] = command
         self.answer['Param1'] = param
         self.answer['Param0'] = 0x00
