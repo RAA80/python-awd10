@@ -1,50 +1,37 @@
-#! /usr/bin/env python
-# -*- coding: utf-8 -*-
+#! /usr/bin/env python3
 
+import contextlib
 import logging
-from serial import Serial
+import os
+import tkinter as tk
+from tkinter import ttk
 
-from awd10.client import Client
+from awd10.client import AwdProtocolError, Client
 from awd10.device import AWD10
 
-import os
-if os.name == 'nt':                                 # sys.platform == 'win32':
+if os.name == "nt":                                 # sys.platform == 'win32':
     from serial.tools.list_ports_windows import comports
-elif os.name == 'posix':
-    from serial.tools.list_ports_linux import SysFS
+elif os.name == "posix":
     import glob
 
+    from serial.tools.list_ports_linux import SysFS
+
     def comports():
-        devices = glob.glob('/dev/ttyS*')           # built-in serial ports
-        devices.extend(glob.glob('/dev/ttyUSB*'))   # usb-serial with own driver
-        devices.extend(glob.glob('/dev/ttyMI*'))    # MOXA serial devices
+        devices = glob.glob("/dev/ttyS*")           # built-in serial ports
+        devices.extend(glob.glob("/dev/ttyUSB*"))   # usb-serial with own driver
+        devices.extend(glob.glob("/dev/ttyMI*"))    # MOXA serial devices
         return [info
                 for info in [SysFS(d) for d in devices]
                 if info.subsystem != "platform"]    # hide non-present internal serial ports
 else:
-    raise ImportError("Sorry: no implementation for your platform ('{}') available".format(os.name))
+    msg = "No implementation for your platform available"
+    raise ImportError(msg)
 
 
-try:
-    import tkinter as Tkinter       # for Python3
-    from tkinter import ttk
-except ImportError:
-    import Tkinter                  # for Python2
-    import ttk
+class CreateToolTip:
+    """Create a tooltip for a given widget."""
 
-
-logging.basicConfig()
-_logger = logging.getLogger('awd10')
-_logger.setLevel(100)
-_console = logging.StreamHandler()
-_console.setLevel(100)
-_logger.addHandler(_console)
-
-
-class CreateToolTip(object):
-    ''' Create a tooltip for a given widget '''
-
-    def __init__(self, widget, text='widget info'):
+    def __init__(self, widget, text="widget info"):
         self.widget = widget
         self.text = text
         self.tw = None
@@ -55,11 +42,11 @@ class CreateToolTip(object):
         x = self.widget.winfo_rootx() + 25
         y = self.widget.winfo_rooty() + 20
 
-        self.tw = Tkinter.Toplevel(self.widget)
+        self.tw = tk.Toplevel(self.widget)
         self.tw.wm_overrideredirect(True)
         self.tw.wm_geometry("+%d+%d" % (x, y))
 
-        label = Tkinter.Label(self.tw, text=self.text, justify='left', background='#ffffe0')
+        label = tk.Label(self.tw, text=self.text, justify="left", background="#ffffe0")
         label.pack(ipadx=1)
 
         self.widget.after(3000, self.Close)
@@ -69,13 +56,13 @@ class CreateToolTip(object):
             self.tw.destroy()
 
 
-class AwdGui(object):
+class AwdGui:
     def __init__(self):
-        self.root = Tkinter.Tk()
-        self.root.title("AWD10 GUI")
+        self.root = tk.Tk()
+        self.root.title("Программа управления контроллером AWD10")
 
-        self.port_iid = list()
-        self.module_iid = list()
+        self.port_iid = []
+        self.module_iid = []
 
         self.task = None
         self.tick_task = None
@@ -87,29 +74,31 @@ class AwdGui(object):
         frame_scan = ttk.Frame(self.root, relief="groove", borderwidth=2)
         frame_scan.pack(side="left", fill="both", ipady=2, ipadx=2, pady=2, padx=2, expand=True)
 
-        portframe = ttk.LabelFrame(frame_scan, text="Список портов в системе", labelanchor='n')
+        portframe = ttk.LabelFrame(frame_scan, text="Список портов в системе", labelanchor="n")
         portframe.pack(side="top", fill="both", pady=2, padx=2, expand=True)
 
-        self.portlist = ttk.Treeview(portframe, columns=("Port"), selectmode='browse', height=5, show="headings")
-        self.portlist.column("Port", width=100, anchor='center')
+        self.portlist = ttk.Treeview(portframe, columns=("Port"), selectmode="browse", height=5, show="headings")
+        self.portlist.column("Port", width=100, anchor="center")
         self.portlist.heading("Port", text="Порт")
-        self.portlist.pack(side='left', fill='both', pady=2, expand=True)
+        self.portlist.pack(side="left", fill="both", pady=2, expand=True)
         self.portlist.bind("<<TreeviewSelect>>", self.Port_Selected)
 
-        iterator = sorted(comports())
-        for n, (port, desc, hwid) in enumerate(iterator, 1):
+        for (port, _, _) in sorted(comports()):
             iid = self.portlist.insert("", "end", values=port)
             self.port_iid.append(iid)
 
         port_scroll = ttk.Scrollbar(portframe, orient="vertical", command=self.portlist.yview)
-        port_scroll.pack(side='right', fill='y')
+        port_scroll.pack(side="right", fill="y")
 
         self.portlist.configure(yscrollcommand=port_scroll.set)
 
-        self.varTimeout = Tkinter.DoubleVar()
-        self.spinTimeout = Tkinter.Spinbox(frame_scan, textvariable=self.varTimeout, format='%0.1f', from_=0.1, to=1.0, increment=0.1, width=13, justify="center")
+        timeoutframe = ttk.LabelFrame(frame_scan, text="Время ожидания", labelanchor="n")
+        timeoutframe.pack(side="top", fill="both", pady=2, padx=2, expand=True)
+
+        self.varTimeout = tk.DoubleVar()
+        self.spinTimeout = tk.Spinbox(timeoutframe, textvariable=self.varTimeout, format="%0.1f", from_=0.1, to=1.0, increment=0.1, width=13, justify="center")
         self.spinTimeout.pack(side="top", pady=2)
-        CreateToolTip(self.spinTimeout, '''Значение таймаута (сек)''')
+        CreateToolTip(self.spinTimeout, """Значение таймаута (сек)""")
 
         self.frame11 = ttk.Frame(frame_scan)
         self.frame11.pack(side="top", fill="x", pady=2)
@@ -119,23 +108,23 @@ class AwdGui(object):
 
         self.progressbar = ttk.Progressbar(self.frame11, maximum=255)
 
-        devframe = ttk.LabelFrame(frame_scan, text="Список активных модулей AWD10", labelanchor='n')
+        devframe = ttk.LabelFrame(frame_scan, text="Список активных модулей AWD10", labelanchor="n")
         devframe.pack(side="top", fill="both", pady=2, padx=2, expand=True)
 
-        self.modulelist = ttk.Treeview(devframe, columns=("address", "baudrate"), selectmode='browse', height=5, show="headings")
-        self.modulelist.column("address", width=100, anchor='center')
-        self.modulelist.column("baudrate", width=100, anchor='center')
+        self.modulelist = ttk.Treeview(devframe, columns=("address", "baudrate"), selectmode="browse", height=5, show="headings")
+        self.modulelist.column("address", width=100, anchor="center")
+        self.modulelist.column("baudrate", width=100, anchor="center")
         self.modulelist.heading("address", text="Адрес")
         self.modulelist.heading("baudrate", text="Битрейт")
-        self.modulelist.pack(side='left', fill='both', pady=2, expand=True)
+        self.modulelist.pack(side="left", fill="both", pady=2, expand=True)
         self.modulelist.bind("<<TreeviewSelect>>", self.Module_Selected)
 
         scroll = ttk.Scrollbar(devframe, orient="vertical", command=self.modulelist.yview)
-        scroll.pack(side='right', fill='y')
+        scroll.pack(side="right", fill="y")
 
         self.modulelist.configure(yscrollcommand=scroll.set)
 
-        self.varDebug = Tkinter.IntVar()
+        self.varDebug = tk.IntVar()
         self.checkDebug = ttk.Checkbutton(frame_scan, text="Режим отладки", variable=self.varDebug)
         self.checkDebug.pack(side="top", pady=2)
 
@@ -144,258 +133,290 @@ class AwdGui(object):
         frame_work = ttk.Frame(self.root, relief="groove", borderwidth=2)
         frame_work.pack(side="left", fill="both", ipady=2, ipadx=2, pady=2, padx=2, expand=True)
 
-        self.varConn = Tkinter.IntVar()
-        self.checkConn = Tkinter.Checkbutton(frame_work, text="Связь", variable=self.varConn)
+        self.varConn = tk.IntVar()
+        self.checkConn = tk.Checkbutton(frame_work, text="Связь", variable=self.varConn)
         self.checkConn.pack(side="top", pady=2)
-        CreateToolTip(self.checkConn, '''Статус связи с модулем:
+        CreateToolTip(self.checkConn, """Статус связи с модулем:
 Красный = Связи нет
-Зеленый = Связь есть''')
+Зеленый = Связь есть""")
 
         frame3 = ttk.Frame(frame_work)
         frame3.pack(side="top", fill="x", pady=2, expand=True)
 
-        cfgframe = ttk.LabelFrame(frame3, text="Состояние регистра конфигурации", labelanchor='n')
+        cfgframe = ttk.LabelFrame(frame3, text="Состояние регистра конфигурации", labelanchor="n")
         cfgframe.pack(side="left", fill="both", pady=2, padx=2, expand=True)
 
         frame311 = ttk.Frame(cfgframe)
         frame311.pack(side="left", fill="both", pady=2, expand=True)
 
-        self.varFB = Tkinter.IntVar()
-        self.checkFB = Tkinter.Checkbutton(frame311, text="FB", variable=self.varFB)
-        self.checkFB.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkFB, '''Управление обратной связью:
+        self.varFB = tk.IntVar()
+        self.checkFB = tk.Checkbutton(frame311, text="FB", variable=self.varFB)
+        self.checkFB.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkFB, """Управление обратной связью:
 1 = Величина сигнала обратной связи пропорциональна скорости вращения двигателя
-0 = Величина сигнала обратной связи принудительно устанавливается равной нулю''')
+0 = Величина сигнала обратной связи принудительно устанавливается равной нулю""")
 
-        self.varSkipLim = Tkinter.IntVar()
-        self.checkSkipLim = Tkinter.Checkbutton(frame311, text="SkipLim", variable=self.varSkipLim)
-        self.checkSkipLim.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkSkipLim, '''Не использовать входы концевых выключателей:
+        self.varSkipLim = tk.IntVar()
+        self.checkSkipLim = tk.Checkbutton(frame311, text="SkipLim", variable=self.varSkipLim)
+        self.checkSkipLim.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkSkipLim, """Не использовать входы концевых выключателей:
 1 = Не использовать сигналы от концевых выключателей
-0 = Использовать сигналы от концевых выключателей''')
+0 = Использовать сигналы от концевых выключателей""")
 
-        self.varLimDrop = Tkinter.IntVar()
-        self.checkLimDrop = Tkinter.Checkbutton(frame311, text="LimDrop", variable=self.varLimDrop)
-        self.checkLimDrop.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkLimDrop, '''При срабатывании концевого выключателя не удерживать двигатель:
+        self.varLimDrop = tk.IntVar()
+        self.checkLimDrop = tk.Checkbutton(frame311, text="LimDrop", variable=self.varLimDrop)
+        self.checkLimDrop.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkLimDrop, """При срабатывании концевого выключателя не удерживать двигатель:
 1 = Не удерживать двигатель
-0 = Удерживать двигатель с нулевой скоростью''')
+0 = Удерживать двигатель с нулевой скоростью""")
 
-        self.varStopDrop = Tkinter.IntVar()
-        self.checkStopDrop = Tkinter.Checkbutton(frame311, text="StopDrop", variable=self.varStopDrop)
-        self.checkStopDrop.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkStopDrop, '''При остановке вращения не удерживать двигатель:
+        self.varStopDrop = tk.IntVar()
+        self.checkStopDrop = tk.Checkbutton(frame311, text="StopDrop", variable=self.varStopDrop)
+        self.checkStopDrop.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkStopDrop, """При остановке вращения не удерживать двигатель:
 1 = Не удерживать двигатель
-0 = Удерживать двигатель с нулевой скоростью''')
+0 = Удерживать двигатель с нулевой скоростью""")
 
-        self.varIntrfEN = Tkinter.IntVar()
-        self.checkIntrfEN = Tkinter.Checkbutton(frame311, text="IntrfEN", variable=self.varIntrfEN)
-        self.checkIntrfEN.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkIntrfEN, '''Управлять разрешением режима «слежения» через интерфейс RS485:
+        self.varIntrfEN = tk.IntVar()
+        self.checkIntrfEN = tk.Checkbutton(frame311, text="IntrfEN", variable=self.varIntrfEN)
+        self.checkIntrfEN.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkIntrfEN, """Управлять разрешением режима «слежения» через интерфейс RS485:
 1 = Управлять разрешением режима «слежения» через интерфейс RS485
-0 = Управлять разрешением режима «слежения» с помощью внешнего цифрового сигнала на входе EN''')
+0 = Управлять разрешением режима «слежения» с помощью внешнего цифрового сигнала на входе EN""")
 
         frame321 = ttk.Frame(cfgframe)
         frame321.pack(side="left", fill="both", pady=2, expand=True)
 
-        self.varIntrfVal = Tkinter.IntVar()
-        self.checkIntrfVal = Tkinter.Checkbutton(frame321, text="IntrfVal", variable=self.varIntrfVal)
-        self.checkIntrfVal.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkIntrfVal, '''Управлять величиной скорости или момента через интерфейс RS485:
+        self.varIntrfVal = tk.IntVar()
+        self.checkIntrfVal = tk.Checkbutton(frame321, text="IntrfVal", variable=self.varIntrfVal)
+        self.checkIntrfVal.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkIntrfVal, """Управлять величиной скорости или момента через интерфейс RS485:
 1 = Управлять скоростью через интерфейс RS485 (для режимов Ст1, Ст2 и Сл) или величиной момента (для режима М)
-0 = Управлять скоростью с помощью внешних аналоговых сигналов (для режимов Ст1, Ст2 и Сл) или величиной момента (для режима М)''')
+0 = Управлять скоростью с помощью внешних аналоговых сигналов (для режимов Ст1, Ст2 и Сл) или величиной момента (для режима М)""")
 
-        self.varIntrfDir = Tkinter.IntVar()
-        self.checkIntrfDir = Tkinter.Checkbutton(frame321, text="IntrfDir", variable=self.varIntrfDir)
-        self.checkIntrfDir.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkIntrfDir, '''Управлять направлением через интерфейс RS485:
+        self.varIntrfDir = tk.IntVar()
+        self.checkIntrfDir = tk.Checkbutton(frame321, text="IntrfDir", variable=self.varIntrfDir)
+        self.checkIntrfDir.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkIntrfDir, """Управлять направлением через интерфейс RS485:
 1 = Управлять направлением через интерфейс RS485
-0 = Управлять направлением с помощью внешних цифровых сигналов на входах Forw и Rev.''')
+0 = Управлять направлением с помощью внешних цифровых сигналов на входах Forw и Rev.""")
 
-        self.varSrcParam = Tkinter.IntVar()
-        self.checkSrcParam = Tkinter.Checkbutton(frame321, text="SrcParam", variable=self.varSrcParam)
-        self.checkSrcParam.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkSrcParam, '''Выбор источника опорного сигнала:
+        self.varSrcParam = tk.IntVar()
+        self.checkSrcParam = tk.Checkbutton(frame321, text="SrcParam", variable=self.varSrcParam)
+        self.checkSrcParam.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkSrcParam, """Выбор источника опорного сигнала:
 1 = Использовать аналоговый вход AN2
-0 = Использовать параметр 31 (для режимов Ст1, Ст2 и Сл) или параметр 36 (для режима М)''')
+0 = Использовать параметр 31 (для режимов Ст1, Ст2 и Сл) или параметр 36 (для режима М)""")
 
-        self.varSkipCV = Tkinter.IntVar()
-        self.checkSkipCV = Tkinter.Checkbutton(frame321, text="SkipCV", variable=self.varSkipCV)
-        self.checkSkipCV.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkSkipCV, '''Способ обработки контрольной суммы в поле CS:
+        self.varSkipCV = tk.IntVar()
+        self.checkSkipCV = tk.Checkbutton(frame321, text="SkipCV", variable=self.varSkipCV)
+        self.checkSkipCV.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkSkipCV, """Способ обработки контрольной суммы в поле CS:
 1 = При приеме данных игнорировать контрольное значение в поля CS. При передаче ответа поле CS равно 0x00.
 0 = При приеме данных обрабатывать контрольное значение, находящееся в поле CS.
-    При передаче ответа в поле CS находится рассчитанное контрольное значение.''')
+    При передаче ответа в поле CS находится рассчитанное контрольное значение.""")
 
-        self.labelMode = Tkinter.Label(frame321, text="Mode=", )
-        self.labelMode.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.labelMode, '''Режим платы:
+        self.labelMode = tk.Label(frame321, text="Mode=")
+        self.labelMode.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.labelMode, """Режим платы:
 0 = режим Ст1 – стабилизация скорости с обратной связью от ЭДС двигателя
 1 = режим Ст2 – стабилизация скорости с обратной связью от инкрементального энкодера
 2 = режим Сл – слежение за внешним аналоговым сигналом
-3 = режим М – стабилизация момента на валу двигателя''')
+3 = режим М – стабилизация момента на валу двигателя""")
 
-        stateframe = ttk.LabelFrame(frame3, text="Состояние регистра статуса", labelanchor='n')
+        stateframe = ttk.LabelFrame(frame3, text="Состояние регистра статуса", labelanchor="n")
         stateframe.pack(side="left", fill="both", pady=2, padx=2, expand=True)
 
         frame41 = ttk.Frame(stateframe)
         frame41.pack(side="left", fill="both", pady=2, expand=True)
 
-        self.varStOverCur = Tkinter.IntVar()
-        self.checkStOverCur = Tkinter.Checkbutton(frame41, text="StOverCur", variable=self.varStOverCur)
-        self.checkStOverCur.pack(side="top", anchor='w', padx=3, expand=True)
-        CreateToolTip(self.checkStOverCur, '''Индикатор токовой зашиты:
+        self.varStOverCur = tk.IntVar()
+        self.checkStOverCur = tk.Checkbutton(frame41, text="StOverCur", variable=self.varStOverCur)
+        self.checkStOverCur.pack(side="top", anchor="w", padx=3, expand=True)
+        CreateToolTip(self.checkStOverCur, """Индикатор токовой зашиты:
 1 = Токовая защита сработала
-0 = Токовая защита не сработала''')
+0 = Токовая защита не сработала""")
 
-        self.varStMaxPWM = Tkinter.IntVar()
-        self.checkStMaxPWM = Tkinter.Checkbutton(frame41, text="StMaxPWM", variable=self.varStMaxPWM)
-        self.checkStMaxPWM.pack(side="top", anchor='w', padx=3, expand=True)
-        CreateToolTip(self.checkStMaxPWM, '''Индикатор максимального управляющего сигнала (ШИМ):
+        self.varStMaxPWM = tk.IntVar()
+        self.checkStMaxPWM = tk.Checkbutton(frame41, text="StMaxPWM", variable=self.varStMaxPWM)
+        self.checkStMaxPWM.pack(side="top", anchor="w", padx=3, expand=True)
+        CreateToolTip(self.checkStMaxPWM, """Индикатор максимального управляющего сигнала (ШИМ):
 1 = Управляющий сигнал достиг максимального значения
-0 = Управляющий сигнал не достиг максимального значения''')
+0 = Управляющий сигнал не достиг максимального значения""")
 
-        self.varStDirFrwRev = Tkinter.IntVar()
-        self.checkStDirFrwRev = Tkinter.Checkbutton(frame41, text="StDirFrwRev", variable=self.varStDirFrwRev)
-        self.checkStDirFrwRev.pack(side="top", anchor='w', padx=3, expand=True)
-        CreateToolTip(self.checkStDirFrwRev, '''Индикатор направления вращения:
+        self.varStDirFrwRev = tk.IntVar()
+        self.checkStDirFrwRev = tk.Checkbutton(frame41, text="StDirFrwRev", variable=self.varStDirFrwRev)
+        self.checkStDirFrwRev.pack(side="top", anchor="w", padx=3, expand=True)
+        CreateToolTip(self.checkStDirFrwRev, """Индикатор направления вращения:
 1 = Выдано управляющее воздействие в направлении «вперед»
-0 = Выдано управляющее воздействие в направлении «назад»''')
+0 = Выдано управляющее воздействие в направлении «назад»""")
 
-        self.varStMotAct = Tkinter.IntVar()
-        self.checkStMotAct = Tkinter.Checkbutton(frame41, text="StMotAct", variable=self.varStMotAct)
-        self.checkStMotAct.pack(side="top", anchor='w', padx=3, expand=True)
-        CreateToolTip(self.checkStMotAct, '''Признак вращения двигателя:
+        self.varStMotAct = tk.IntVar()
+        self.checkStMotAct = tk.Checkbutton(frame41, text="StMotAct", variable=self.varStMotAct)
+        self.checkStMotAct.pack(side="top", anchor="w", padx=3, expand=True)
+        CreateToolTip(self.checkStMotAct, """Признак вращения двигателя:
 1 = Двигатель вращается
-0 = Двигатель не вращается''')
+0 = Двигатель не вращается""")
 
         frame42 = ttk.Frame(stateframe)
         frame42.pack(side="left", fill="both", pady=2, expand=True)
 
-        self.varStInRev = Tkinter.IntVar()
-        self.checkStInRev = Tkinter.Checkbutton(frame42, text="StInRev", variable=self.varStInRev)
-        self.checkStInRev.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkStInRev, '''Состояние входа «движение назад» Rev:
+        self.varStInRev = tk.IntVar()
+        self.checkStInRev = tk.Checkbutton(frame42, text="StInRev", variable=self.varStInRev)
+        self.checkStInRev.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkStInRev, """Состояние входа «движение назад» Rev:
 1 = На входе Rev присутствует сигнал, разрешающий вращение двигателя
-0 = На входе Rev отсутствует сигнал, разрешающий вращение двигателя''')
+0 = На входе Rev отсутствует сигнал, разрешающий вращение двигателя""")
 
-        self.varStInFrw = Tkinter.IntVar()
-        self.checkStInFrw = Tkinter.Checkbutton(frame42, text="StInFrw", variable=self.varStInFrw)
-        self.checkStInFrw.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkStInFrw, '''Состояние входа «движение вперед» Forw:
+        self.varStInFrw = tk.IntVar()
+        self.checkStInFrw = tk.Checkbutton(frame42, text="StInFrw", variable=self.varStInFrw)
+        self.checkStInFrw.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkStInFrw, """Состояние входа «движение вперед» Forw:
 1 = На входе Forw присутствует сигнал, разрешающий вращение двигателя
-0 = На входе Forw отсутствует сигнал, разрешающий вращение двигателя''')
+0 = На входе Forw отсутствует сигнал, разрешающий вращение двигателя""")
 
-        self.varStLimRev = Tkinter.IntVar()
-        self.checkStLimRev = Tkinter.Checkbutton(frame42, text="StLimRev", variable=self.varStLimRev)
-        self.checkStLimRev.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkStLimRev, '''Состояние входа «концевой выключатель «движение назад»:
+        self.varStLimRev = tk.IntVar()
+        self.checkStLimRev = tk.Checkbutton(frame42, text="StLimRev", variable=self.varStLimRev)
+        self.checkStLimRev.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkStLimRev, """Состояние входа «концевой выключатель «движение назад»:
 1 = На входе LRev присутствует сигнал, разрешающий вращение двигателя
-0 = На входе LRev отсутствует сигнал, разрешающий вращение двигателя''')
+0 = На входе LRev отсутствует сигнал, разрешающий вращение двигателя""")
 
-        self.varStLimFrw = Tkinter.IntVar()
-        self.checkStLimFrw = Tkinter.Checkbutton(frame42, text="StLimFrw", variable=self.varStLimFrw)
-        self.checkStLimFrw.pack(side="top", anchor='w', padx=2, expand=True)
-        CreateToolTip(self.checkStLimFrw, '''Состояние входа «концевой выключатель «движение вперед»:
+        self.varStLimFrw = tk.IntVar()
+        self.checkStLimFrw = tk.Checkbutton(frame42, text="StLimFrw", variable=self.varStLimFrw)
+        self.checkStLimFrw.pack(side="top", anchor="w", padx=2, expand=True)
+        CreateToolTip(self.checkStLimFrw, """Состояние входа «концевой выключатель «движение вперед»:
 1 = На входе LForw присутствует сигнал, разрешающий вращение двигателя
-0 = На входе LForw отсутствует сигнал, разрешающий вращение двигателя''')
+0 = На входе LForw отсутствует сигнал, разрешающий вращение двигателя""")
 
-        speedframe = ttk.LabelFrame(frame_work, text="Скорость движения", labelanchor='n')
+        speedframe = ttk.LabelFrame(frame_work, text="Скорость движения", labelanchor="n")
         speedframe.pack(side="top", fill="x", pady=2, padx=2, expand=True)
 
-        sliderSpeed = Tkinter.Scale(speedframe, from_=-1023, to=1023, orient="horizontal")
+        sliderSpeed = tk.Scale(speedframe, from_=-1023, to=1023, orient="horizontal")
         sliderSpeed.pack(side="top", fill="x", pady=2, expand=True)
-        CreateToolTip(sliderSpeed, '''Установить скорость движения''')
+        CreateToolTip(sliderSpeed, """Установить скорость движения""")
 
         buttonMove = ttk.Button(speedframe, text="Начать движение", command=lambda: self.Button_Move(sliderSpeed))
         buttonMove.pack(side="left", fill="x", pady=2, expand=True)
-        CreateToolTip(buttonMove, '''Начать движение с заданной скоростью''')
+        CreateToolTip(buttonMove, """Начать движение с заданной скоростью""")
 
-        configframe = ttk.LabelFrame(frame_work, text="Конфигурирование", labelanchor='n')
+        configframe = ttk.LabelFrame(frame_work, text="Конфигурирование", labelanchor="n")
         configframe.pack(side="top", fill="x", pady=2, padx=2, expand=True)
 
-        buttonReset = ttk.Button(configframe, text="Перезагрузка", command=self.Button_Reset)
-        buttonReset.pack(side="left", fill="x", padx=2)
-        CreateToolTip(buttonReset, '''Восстановить настройки по-умолчанию''')
-
-        self.varcomboCode = Tkinter.StringVar()
-        self.comboCode = ttk.Combobox(configframe, values=sorted(AWD10['param'].keys()), textvariable=self.varcomboCode, state='readonly', justify="center")
+        self.varcomboCode = tk.StringVar()
+        self.comboCode = ttk.Combobox(configframe, values=sorted(AWD10["param"].keys()), textvariable=self.varcomboCode, state="readonly", justify="center")
         self.comboCode.pack(side="left", fill="x", padx=2, expand=True)
-        self.comboCode.bind('<<ComboboxSelected>>', lambda event: self.Code_Selected(event))
-        CreateToolTip(self.comboCode, '''Код параметра модуля AWD10''')
+        self.comboCode.bind("<<ComboboxSelected>>", lambda event: self.Code_Selected(event))
+        CreateToolTip(self.comboCode, """Код параметра модуля AWD10""")
 
         self.frame61 = ttk.Frame(configframe)
         self.frame61.pack(side="left", fill="x", padx=2)
 
-        self.varCurVal = Tkinter.StringVar()
-        self.entryCurValue = Tkinter.Entry(self.frame61, textvariable=self.varCurVal, state='readonly', width=13, justify="center")
+        self.varCurVal = tk.StringVar()
+        self.entryCurValue = tk.Entry(self.frame61, textvariable=self.varCurVal, state="readonly", width=13, justify="center")
         self.entryCurValue.pack(side="left", fill="x", padx=2)
-        CreateToolTip(self.entryCurValue, '''Текущее значение параметра''')
+        CreateToolTip(self.entryCurValue, """Текущее значение параметра""")
 
-        self.spinValue = Tkinter.Spinbox(self.frame61, from_=0, to=0, width=13, justify="center")
+        self.spinValue = tk.Spinbox(self.frame61, from_=0, to=0, width=13, justify="center")
         self.spinValue.pack(side="left", fill="x", padx=2)
-        CreateToolTip(self.spinValue, '''Новое значение параметра''')
+        CreateToolTip(self.spinValue, """Новое значение параметра""")
 
-        self.mbMode = Tkinter.Menubutton(self.frame61, text='Режим', width=13, relief="raised")
-        self.mbMode.menu = Tkinter.Menu(self.mbMode, tearoff=0)
-        self.mbMode['menu'] = self.mbMode.menu
-        CreateToolTip(self.mbMode, '''Установить режим работы модуля AWD10''')
+        self.mbMode = tk.Menubutton(self.frame61, text="Режим", width=13, relief="raised")
+        self.mbMode.menu = tk.Menu(self.mbMode, tearoff=0)
+        self.mbMode["menu"] = self.mbMode.menu
+        CreateToolTip(self.mbMode, """Установить режим работы модуля AWD10""")
 
-        self.varFB_new = Tkinter.IntVar()
-        self.varSkipLim_new = Tkinter.IntVar()
-        self.varLimDrop_new = Tkinter.IntVar()
-        self.varStopDrop_new = Tkinter.IntVar()
-        self.varIntrfEN_new = Tkinter.IntVar()
-        self.varIntrfVal_new = Tkinter.IntVar()
-        self.varIntrfDir_new = Tkinter.IntVar()
-        self.varSrcParam_new = Tkinter.IntVar()
-        self.varSkipCV_new = Tkinter.IntVar()
-        self.varMode_new = Tkinter.IntVar()
+        self.varFB_new = tk.IntVar()
+        self.varSkipLim_new = tk.IntVar()
+        self.varLimDrop_new = tk.IntVar()
+        self.varStopDrop_new = tk.IntVar()
+        self.varIntrfEN_new = tk.IntVar()
+        self.varIntrfVal_new = tk.IntVar()
+        self.varIntrfDir_new = tk.IntVar()
+        self.varSrcParam_new = tk.IntVar()
+        self.varSkipCV_new = tk.IntVar()
+        self.varMode_new = tk.IntVar()
 
-        self.mbMode.menu.add_checkbutton(label='FB', variable=self.varFB_new)
-        self.mbMode.menu.add_checkbutton(label='SkipLim', variable=self.varSkipLim_new)
-        self.mbMode.menu.add_checkbutton(label='LimDrop', variable=self.varLimDrop_new)
-        self.mbMode.menu.add_checkbutton(label='StopDrop', variable=self.varStopDrop_new)
-        self.mbMode.menu.add_checkbutton(label='IntrfEN', variable=self.varIntrfEN_new)
-        self.mbMode.menu.add_checkbutton(label='IntrfVal', variable=self.varIntrfVal_new)
-        self.mbMode.menu.add_checkbutton(label='IntrfDir', variable=self.varIntrfDir_new)
-        self.mbMode.menu.add_checkbutton(label='SrcParam', variable=self.varSrcParam_new)
-        self.mbMode.menu.add_checkbutton(label='SkipCV', variable=self.varSkipCV_new)
-        self.mbMode.menu.add_radiobutton(label='Ст1', variable=self.varMode_new, value=0)
-        self.mbMode.menu.add_radiobutton(label='Ст2', variable=self.varMode_new, value=1)
-        self.mbMode.menu.add_radiobutton(label='Сл', variable=self.varMode_new, value=2)
-        self.mbMode.menu.add_radiobutton(label='М', variable=self.varMode_new, value=3)
+        self.mbMode.menu.add_checkbutton(label="FB", variable=self.varFB_new)
+        self.mbMode.menu.add_checkbutton(label="SkipLim", variable=self.varSkipLim_new)
+        self.mbMode.menu.add_checkbutton(label="LimDrop", variable=self.varLimDrop_new)
+        self.mbMode.menu.add_checkbutton(label="StopDrop", variable=self.varStopDrop_new)
+        self.mbMode.menu.add_checkbutton(label="IntrfEN", variable=self.varIntrfEN_new)
+        self.mbMode.menu.add_checkbutton(label="IntrfVal", variable=self.varIntrfVal_new)
+        self.mbMode.menu.add_checkbutton(label="IntrfDir", variable=self.varIntrfDir_new)
+        self.mbMode.menu.add_checkbutton(label="SrcParam", variable=self.varSrcParam_new)
+        self.mbMode.menu.add_checkbutton(label="SkipCV", variable=self.varSkipCV_new)
+        self.mbMode.menu.add_radiobutton(label="Ст1", variable=self.varMode_new, value=0)
+        self.mbMode.menu.add_radiobutton(label="Ст2", variable=self.varMode_new, value=1)
+        self.mbMode.menu.add_radiobutton(label="Сл", variable=self.varMode_new, value=2)
+        self.mbMode.menu.add_radiobutton(label="М", variable=self.varMode_new, value=3)
 
         self.buttonConfig = ttk.Button(configframe, text="Записать", state="disabled", command=self.Button_Config)
         self.buttonConfig.pack(side="left", fill="x", padx=2)
-        CreateToolTip(self.buttonConfig, '''Записать настройки в модуль AWD10''')
+        CreateToolTip(self.buttonConfig, """Записать настройки в модуль AWD10""")
 
-        print("Start GUI ...")
+        modeframe = ttk.LabelFrame(frame_work, text="Смена режима", labelanchor="n")
+        modeframe.pack(side="top", fill="x", pady=2, padx=2, expand=True)
+
+        buttonReset = ttk.Button(modeframe, text="Перезагрузка", command=self.Button_Reset)
+        buttonReset.pack(side="left", fill="x", padx=2, expand=True)
+        CreateToolTip(buttonReset, """Восстановить настройки по-умолчанию""")
+
+        buttonStop = ttk.Button(modeframe, text="Остановка", command=self.Button_Stop)
+        buttonStop.pack(side="left", fill="x", padx=2, expand=True)
+        CreateToolTip(buttonStop, """Закончить выполнение режима""")
+
+        buttonEnrot = ttk.Button(modeframe, text="Режим Enrot", command=self.Button_Enrot)
+        buttonEnrot.pack(side="left", fill="x", padx=2, expand=True)
+        CreateToolTip(buttonEnrot, """Включить режим слежения за внешним аналоговым сигналом""")
+
+        driverframe = ttk.LabelFrame(frame_work, text="Состояние двигателя", labelanchor="n")
+        driverframe.pack(side="top", pady=2, padx=2)
+
+        self.varcombodriver = tk.StringVar()
+        self.combodriverCode = ttk.Combobox(driverframe, values=sorted(AWD10["result"].keys()), textvariable=self.varcombodriver, state="readonly", justify="center")
+        self.combodriverCode.pack(side="left", padx=2)
+        self.combodriverCode.bind("<<ComboboxSelected>>", lambda event: self.Driver_Status(event))
+        CreateToolTip(self.combodriverCode, """Код параметра двигателя""")
+
+        self.varCurValdriver = tk.IntVar()
+        self.entryCurValuedriver = tk.Entry(driverframe, textvariable=self.varCurValdriver, state="readonly", width=13, justify="center")
+        self.entryCurValuedriver.pack(side="left", padx=2)
+        CreateToolTip(self.entryCurValuedriver, """Текущее значение параметра""")
+
         self.root.mainloop()
 
     def __del__(self):
         if self.transport: del self.transport
         if self.id_awd10: del self.id_awd10
 
+    def Driver_Status(self, event):
+        key = self.varcombodriver.get()
+
+        val = self.id_awd10.result(key)
+        self.varCurValdriver.set(val)
+
     def Button_Reset(self):
         self.id_awd10.reset()
+
+    def Button_Stop(self):
+        self.id_awd10.stop()
+
+    def Button_Enrot(self):
+        self.id_awd10.enrot()
 
     def Button_Config(self):
         key = self.varcomboCode.get()
 
         if key == "BoardMode":
             self.id_awd10.stop()
-            value = int("{:b}{:b}{:b}{:b}{:b}{:b}{:b}{:b}0000{:b}{:03b}".format(self.varFB_new.get(),
-                                                                                self.varSkipLim_new.get(),
-                                                                                self.varLimDrop_new.get(),
-                                                                                self.varStopDrop_new.get(),
-                                                                                self.varIntrfEN_new.get(),
-                                                                                self.varIntrfVal_new.get(),
-                                                                                self.varIntrfDir_new.get(),
-                                                                                self.varSrcParam_new.get(),
-                                                                                self.varSkipCV_new.get(),
-                                                                                self.varMode_new.get()),
-                                                                                2)
+            value = int("{:b}{:b}{:b}{:b}{:b}{:b}{:b}{:b}0000{:b}{:03b}".
+                        format(self.varFB_new.get(), self.varSkipLim_new.get(),
+                               self.varLimDrop_new.get(), self.varStopDrop_new.get(),
+                               self.varIntrfEN_new.get(), self.varIntrfVal_new.get(),
+                               self.varIntrfDir_new.get(), self.varSrcParam_new.get(),
+                               self.varSkipCV_new.get(), self.varMode_new.get()),
+                               2)
             self.id_awd10.set_param(key, value)
         else:
             self.id_awd10.set_param(key, int(self.spinValue.get()))
@@ -403,32 +424,31 @@ class AwdGui(object):
     def Tick(self):
         self.tick_task = self.root.after(500, self.Tick)
 
-        AWD10_state = self.id_awd10.state()
-        if AWD10_state:
-            self.varConn.set(bool(AWD10_state))
-            self.checkConn.config(bg='green')
+        if state := self.id_awd10.state():
+            self.varConn.set(bool(state))
+            self.checkConn.config(bg="green")
 
-            self.varFB.set(AWD10_state['FB'])
-            self.varSkipLim.set(AWD10_state['SkipLim'])
-            self.varLimDrop.set(AWD10_state['LimDrop'])
-            self.varStopDrop.set(AWD10_state['StopDrop'])
-            self.varIntrfEN.set(AWD10_state['IntrfEN'])
-            self.varIntrfVal.set(AWD10_state['IntrfVal'])
-            self.varIntrfDir.set(AWD10_state['IntrfDir'])
-            self.varSrcParam.set(AWD10_state['SrcParam'])
-            self.varSkipCV.set(AWD10_state['SkipCV'])
-            self.labelMode.config(text="Mode=" + str(AWD10_state['Mode']))
-            self.varStOverCur.set(AWD10_state['StOverCur'])
-            self.varStMaxPWM.set(AWD10_state['StMaxPWM'])
-            self.varStDirFrwRev.set(AWD10_state['StDirFrwRev'])
-            self.varStMotAct.set(AWD10_state['StMotAct'])
-            self.varStInRev.set(AWD10_state['StInRev'])
-            self.varStInFrw.set(AWD10_state['StInFrw'])
-            self.varStLimRev.set(AWD10_state['StLimRev'])
-            self.varStLimFrw.set(AWD10_state['StLimFrw'])
+            self.varFB.set(state["FB"])
+            self.varSkipLim.set(state["SkipLim"])
+            self.varLimDrop.set(state["LimDrop"])
+            self.varStopDrop.set(state["StopDrop"])
+            self.varIntrfEN.set(state["IntrfEN"])
+            self.varIntrfVal.set(state["IntrfVal"])
+            self.varIntrfDir.set(state["IntrfDir"])
+            self.varSrcParam.set(state["SrcParam"])
+            self.varSkipCV.set(state["SkipCV"])
+            self.labelMode.config(text=f"Mode={state['Mode']}")
+            self.varStOverCur.set(state["StOverCur"])
+            self.varStMaxPWM.set(state["StMaxPWM"])
+            self.varStDirFrwRev.set(state["StDirFrwRev"])
+            self.varStMotAct.set(state["StMotAct"])
+            self.varStInRev.set(state["StInRev"])
+            self.varStInFrw.set(state["StInFrw"])
+            self.varStLimRev.set(state["StLimRev"])
+            self.varStLimFrw.set(state["StLimFrw"])
         else:
-            self.varConn.set(bool(AWD10_state))
-            self.checkConn.config(bg='red')
+            self.varConn.set(bool(state))
+            self.checkConn.config(bg="red")
 
             self.varFB.set(False)
             self.varSkipLim.set(False)
@@ -459,13 +479,13 @@ class AwdGui(object):
 
         if index != -1:
             self.buttonConfig.config(state="normal")
-            CreateToolTip(self.comboCode, '''Код параметра модуля AWD10''')
+            CreateToolTip(self.comboCode, """Код параметра модуля AWD10""")
 
         val = self.id_awd10.get_param(key)
         self.varCurVal.set(val)
 
-        var = Tkinter.IntVar()
-        self.spinValue.config(from_=AWD10['param'][key]['min'], to=AWD10['param'][key]['max'], textvariable=var)
+        var = tk.IntVar()
+        self.spinValue.config(from_=AWD10["param"][key]["min"], to=AWD10["param"][key]["max"], textvariable=var)
 
         if key == "BoardMode":
             self.mbMode.pack(side="left", fill="x", padx=2)
@@ -486,8 +506,7 @@ class AwdGui(object):
             selected_unit = int(selected_unit)
             selected_baudrate = int(selected_baudrate)
 
-        print("Selected module {} with baudrate {} at port {}".
-                format(selected_unit, selected_baudrate, selected_port))
+        print(f"Selected module {selected_unit} with baudrate {selected_baudrate} at port {selected_port}")
 
         if self.transport:
             del self.transport
@@ -496,12 +515,10 @@ class AwdGui(object):
             del self.id_awd10
             self.id_awd10 = None
 
-        loglevel = logging.DEBUG if self.varDebug.get() else logging.INFO
-        _logger.setLevel(loglevel)
+        logging.basicConfig(level=logging.DEBUG if self.varDebug.get() else logging.INFO)
 
-        self.transport = Serial(port=selected_port, baudrate=selected_baudrate, timeout=self.varTimeout.get())
-        self.id_awd10 = Client(transport=self.transport, device=AWD10, unit=selected_unit)
-
+        self.id_awd10 = Client(port=selected_port, unit=selected_unit,
+                               device=AWD10, timeout=self.varTimeout.get())
         if self.task:
             self.root.after_cancel(self.task)
             self.root.after_cancel(self.tick_task)
@@ -513,7 +530,7 @@ class AwdGui(object):
             self.root.after_cancel(self.task)
             self.root.after_cancel(self.tick_task)
 
-        self.checkConn.config(bg='red')
+        self.checkConn.config(bg="red")
 
         self.varConn.set(False)
         self.varFB.set(False)
@@ -556,26 +573,23 @@ class AwdGui(object):
         for item in self.portlist.selection():
             selected_port = self.portlist.item(item, "values")[0]
 
-        print("Start scanning port {}".format(selected_port))
+        print(f"Start scanning port {selected_port}")
 
-        loglevel = logging.DEBUG if self.varDebug.get() else 100
-        _logger.setLevel(loglevel)
+        logging.basicConfig(level=logging.DEBUG if self.varDebug.get() else logging.INFO)
 
-        for baudrate in (9600,):
-            for unit in range(1, 255):
-                transport = Serial(port=selected_port, baudrate=baudrate, timeout=self.varTimeout.get())
-                id_awd10 = Client(transport=transport, device=AWD10, unit=unit)
-
-                if id_awd10.echo():
-                    iid = self.modulelist.insert("", "end", values=(unit, baudrate))
+        for unit in range(1, 255):
+            awd10 = Client(port=selected_port, unit=unit,
+                           device=AWD10, timeout=self.varTimeout.get())
+            with contextlib.suppress(AwdProtocolError):
+                if awd10.echo():
+                    iid = self.modulelist.insert("", "end", values=(unit, 9600))
                     self.module_iid.append(iid)
+            self.root.update()
 
-                self.root.update()
+            del awd10
+            self.progressbar.step(1)
 
-                del id_awd10
-                self.progressbar.step(1)
-
-        print("Stop scanning port {}".format(selected_port))
+        print(f"Stop scanning port {selected_port}")
 
         self.progressbar.pack_forget()
         self.buttonScan.pack(side="top", fill="x", pady=2)
@@ -583,4 +597,3 @@ class AwdGui(object):
 
 if __name__ == "__main__":
     AwdGui()
-    print("Done")

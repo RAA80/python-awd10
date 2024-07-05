@@ -1,28 +1,38 @@
-#! /usr/bin/env python
-# -*- coding: utf-8 -*-
+#! /usr/bin/env python3
+
+from __future__ import annotations
 
 import argparse
-import threading
-import struct
-import time
+import logging
+from struct import error, unpack
+from threading import Thread
+from time import sleep
+
+from awd10.client import (CMD_ECHO, CMD_ENROT, CMD_EXEC_CMD, CMD_GET_PARAM,
+                          CMD_GET_RESULT, CMD_RESET, CMD_SET_PARAM, CMD_SETROT,
+                          CMD_STOP)
+from awd10.device import AWD10
 from serial import Serial
 
-from awd10.device import AWD10
-from awd10.client import (CMD_ECHO, CMD_EXEC_CMD, CMD_GET_PARAM, CMD_GET_RESULT,
-                          CMD_SET_PARAM, CMD_ENROT, CMD_RESET, CMD_SETROT, CMD_STOP)
+HIGH_LIMIT = 10000
+LOW_LIMIT = -10000
 
 
-class SimAWD10(object):
-    def __init__(self, port, unit):
-        self.answer = {'Address': 0, 'Command': 0, 'Param1': 0, 'Param0': 0,
-                       'Data1':   0, 'Data0':   0, 'Status': 0, 'CS':     0}
+class SimAWD10:
+    """Класс симулятора блока управления AWD10."""
+
+    def __init__(self, port: str, unit: int) -> None:
+        """Инициализация класса симулятора с указанными параметрами."""
+
+        self.answer = {"Address": 0, "Command": 0, "Param1": 0, "Param0": 0,
+                       "Data1":   0, "Data0":   0, "Status": 0, "CS":     0}
         self.state = {}
         self.reset_state()
 
         self.param = AWD10["param"]
         for key in self.param:
             self.param[key].update(value=0)
-        self.param["Address"]['value'] = unit
+        self.param["Address"]["value"] = unit
 
         self.result = AWD10["result"]
         for key in self.result:
@@ -36,12 +46,18 @@ class SimAWD10(object):
 
         self.start()
 
-    def __del__(self):
+    def __del__(self) -> None:
+        """Закрытие соединения с устройством при удалении объекта."""
+
+        if self.port.is_open:
+            self.port.close()
         if self.drv:
             self.drv.stop = True
             self.drv.join()
 
-    def reset_state(self):
+    def reset_state(self) -> None:
+        """Сброс флагов текущего состояния."""
+
         self.state.update(FB=False, SkipLim=False, LimDrop=False,
                           StopDrop=False, IntrfEN=False, IntrfVal=False,
                           IntrfDir=False, SrcParam=False, SkipCV=False,
@@ -49,22 +65,22 @@ class SimAWD10(object):
                           StDirFrwRev=False, StMotAct=False, StInRev=False,
                           StInFrw=False, StLimRev=False, StLimFrw=False)
 
-    def start(self):
+    def start(self) -> None:
+        """Запуск обработки команд в симуляторе."""
+
         while True:
             try:
                 readed = self.port.read(8)
-                request = struct.unpack(">8B", readed)
+                request = unpack(">8B", readed)
             except KeyboardInterrupt:
                 break
-            except struct.error:
+            except error:
                 continue
 
-            if self.param["Address"]['value'] == request[0]:
-                # address = request[0]
+            if self.param["Address"]["value"] == request[0]:
                 command = request[1]
                 param = request[2]
                 data = (request[4] << 8) + request[5]
-                # status = request[6]
                 crc = request[7]
 
                 if crc != -sum(request[:7]) & 0xFF:
@@ -72,8 +88,8 @@ class SimAWD10(object):
 
                 elif command == CMD_ECHO:
                     self.answer_header(command, 0x41)
-                    self.answer['Param0'] = 0x57
-                    self.answer['Data1'] = 0x44
+                    self.answer["Param0"] = 0x57
+                    self.answer["Data1"] = 0x44
 
                 elif command == CMD_EXEC_CMD:
                     if param == CMD_RESET:
@@ -82,11 +98,11 @@ class SimAWD10(object):
                         self.drv.speed = 0
                         self.set_param(self.result, command, param, "Speed", 0)
 
-                    elif param in [CMD_ENROT, CMD_STOP]:
+                    elif param in {CMD_ENROT, CMD_STOP}:
                         self.answer_header(command, param)
 
                     elif param == CMD_SETROT:
-                        if request[4]>>7 & 1:
+                        if request[4] >> 7 & 1:
                             data -= 65536
 
                         self.drv.speed = data
@@ -96,26 +112,23 @@ class SimAWD10(object):
                         self.answer_header(0xC3, 0x00)      # Wrong command parameter
 
                 elif command == CMD_GET_RESULT:
-                    key = self._search_key(self.result, param)
-                    if key:
+                    if key := self._search_key(self.result, param):
                         if key == "Status":
-                            self.result["Status"]['value'] = self.status()
+                            self.result["Status"]["value"] = self.status()
                         self.get_param(self.result, command, param, key)
                     else:
                         self.answer_header(0xC3, 0x00)      # Wrong command parameter
 
                 elif command == CMD_GET_PARAM:
-                    key = self._search_key(self.param, param)
-                    if key:
+                    if key := self._search_key(self.param, param):
                         self.get_param(self.param, command, param, key)
                     else:
                         self.answer_header(0xC3, 0x00)      # Wrong command parameter
 
                 elif command == CMD_SET_PARAM:
-                    key = self._search_key(self.param, param)
-                    if key:
+                    if key := self._search_key(self.param, param):
                         if key == "Address":
-                            self.param["Address"]['value'] = data
+                            self.param["Address"]["value"] = data
                         self.set_param(self.param, command, param, key, data)
                     else:
                         self.answer_header(0xC3, 0x00)      # Wrong command parameter
@@ -124,70 +137,93 @@ class SimAWD10(object):
                     self.answer_header(0xD2, 0x00)          # Wrong command
                 self.write()
 
-    def write(self):
-        packet = bytearray([self.answer['Address'], self.answer['Command'],
-                            self.answer['Param1'], self.answer['Param0'],
-                            self.answer['Data1'], self.answer['Data0'],
+    def write(self) -> None:
+        """Запись данных в порт."""
+
+        packet = bytearray([self.answer["Address"], self.answer["Command"],
+                            self.answer["Param1"], self.answer["Param0"],
+                            self.answer["Data1"], self.answer["Data0"],
                             self.status(), 0x00])
         packet[7] = -sum(packet) & 0xFF
         self.port.write(packet)
 
-    def status(self):
-        return int((8*"{:b}").format(self.state['StOverCur'], self.state['StMaxPWM'],
-                                     self.state['StDirFrwRev'], self.state['StMotAct'],
-                                     self.state['StInRev'], self.state['StInFrw'],
-                                     self.state['StLimRev'], self.state['StLimFrw']),
-                                     2)
+    def status(self) -> int:
+        """Преобразование флагов статуса в целочисленный тип."""
 
-    def answer_header(self, command, param):
-        self.answer['Address'] = self.param["Address"]['value']
-        self.answer['Command'] = command
-        self.answer['Param1'] = param
-        self.answer['Param0'] = 0x00
-        self.answer['Data1'] = 0x00
-        self.answer['Data0'] = 0x00
+        return int((f'{self.state["StOverCur"]:b}{self.state["StMaxPWM"]:b}'
+                    f'{self.state["StDirFrwRev"]:b}{self.state["StMotAct"]:b}'
+                    f'{self.state["StInRev"]:b}{self.state["StInFrw"]:b}'
+                    f'{self.state["StLimRev"]:b}{self.state["StLimFrw"]:b}'),
+                    2)
 
-    def get_param(self, arg, command, param, key):
+    def answer_header(self, command: int, param: int) -> None:
+        """Формирование параметров ответа по умолчанию."""
+
+        self.answer["Address"] = self.param["Address"]["value"]
+        self.answer["Command"] = command
+        self.answer["Param1"] = param
+        self.answer["Param0"] = 0x00
+        self.answer["Data1"] = 0x00
+        self.answer["Data0"] = 0x00
+
+    def get_param(self, arg: dict, command: int, param: int, key: str) -> None:
+        """Получение значения параметра по заданному ключу."""
+
         self.answer_header(command, param)
-        self.answer['Data1'] = (arg[key]['value'] & 0xFF00) >> 8
-        self.answer['Data0'] = arg[key]['value'] & 0x00FF
+        self.answer["Data1"] = (arg[key]["value"] & 0xFF00) >> 8
+        self.answer["Data0"] = arg[key]["value"] & 0x00FF
 
-    def set_param(self, arg, command, param, key, value):
-        arg[key]['value'] = value
+    def set_param(self, arg: dict, command: int, param: int, key: str, value: int) -> None:
+        """Установка нового значения параметра по заданному ключу."""
+
+        arg[key]["value"] = value
         self.get_param(arg, command, param, key)
 
-    def _search_key(self, arg, value):
-        return next((key for key in arg if value == arg[key]['code']), None)
+    @staticmethod
+    def _search_key(arg: dict, value: int) -> str | None:
+        """Поиск ключа по заданному коду."""
+
+        return next((key for key in arg if value == arg[key]["code"]), None)
 
 
-class Driver(threading.Thread):
-    def __init__(self, state, speed=0):
-        threading.Thread.__init__(self)
+class Driver(Thread):
+    """Класс, отвечающий за симуляцию перемещения двигателя."""
+
+    def __init__(self, state: dict, speed: int = 0) -> None:
+        """Инициализация класса с указанными параметрами."""
+
+        Thread.__init__(self)
 
         self.state = state
         self.speed = speed
         self.position = 0
         self.stop = False
 
-    def run(self):
+    def run(self) -> None:
+        """Запуск симуляции перемещения двигателя."""
+
         while not self.stop:
             self.position += self.speed
-            self.position = min(self.position, 10000)
-            self.position = max(self.position, -10000)
+            self.position = min(self.position, HIGH_LIMIT)
+            self.position = max(self.position, LOW_LIMIT)
 
-            self.state['StMotAct'] = self.speed != 0
-            self.state['StDirFrwRev'] = self.speed > 0
-            self.state['StLimFrw'] = self.position < 10000
-            self.state['StLimRev'] = self.position > -10000
+            self.state["StMotAct"] = self.speed != 0
+            self.state["StDirFrwRev"] = self.speed > 0
+            self.state["StLimFrw"] = self.position < HIGH_LIMIT
+            self.state["StLimRev"] = self.position > LOW_LIMIT
 
-            # print("speed: {:5d}, position: {:6d}".format(self.speed, self.position))
-            time.sleep(1.0)
+            logging.debug("speed: %5d, position: %6d", self.speed, self.position)
+            sleep(1.0)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='AWD10 simulator command-line option')
-    parser.add_argument('--port', type=str, nargs='?', const='COM1', required=True, help='Set used port name')
-    parser.add_argument('--unit', type=int, nargs='?', const=5, required=True, help='Set used AWD10 address')
+    parser = argparse.ArgumentParser(description="AWD10 simulator command-line option")
+    parser.add_argument("--port", type=str, required=True, help="select port name")
+    parser.add_argument("--unit", type=int, required=True, help="select AWD10 address")
+    parser.add_argument("--debug", action="store_true", help="print debug information")
     args = parser.parse_args()
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
 
     SimAWD10(port=args.port, unit=args.unit)
