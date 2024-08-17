@@ -7,10 +7,6 @@ import logging
 from awd10.client import AwdProtocolError, Client
 from awd10.device import AWD10
 
-_param_keys = sorted(AWD10["param"].keys())
-_result_keys = sorted(AWD10["result"].keys())
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AWD10 command-line option")
 
@@ -35,7 +31,7 @@ if __name__ == "__main__":
     group2_ex.add_argument("--state", action="store_true",
                                       help="read AWD10 state")
     group2_ex.add_argument("--get", type=str, nargs=1, metavar=("KEY"),
-                                    choices=_param_keys,
+                                    choices=sorted(AWD10["param"].keys()),
                                     help="read config value")
     group2_ex.add_argument("--set", type=str, nargs=2, metavar=("KEY", "VALUE"),
                                     help="write config value")
@@ -46,7 +42,7 @@ if __name__ == "__main__":
     group2_ex.add_argument("--enrot", action="store_true",
                                       help="send ENROT request")
     group2_ex.add_argument("--result", type=str, nargs=1, metavar=("KEY"),
-                                       choices=_result_keys,
+                                       choices=sorted(AWD10["result"].keys()),
                                        help="read result value")
     args = parser.parse_args()
 
@@ -57,13 +53,13 @@ if __name__ == "__main__":
 
     if args.scan:
         for unit in range(1, 256):
-            client = Client(port=args.port, unit=unit, device=AWD10, timeout=timeout)
+            client = Client(port=args.port, unit=unit, timeout=timeout)
             with contextlib.suppress(AwdProtocolError):
                 if client.echo():
                     print(f"Unit: {unit} - OK")
             del client
     else:
-        client = Client(port=args.port, unit=args.unit, device=AWD10, timeout=timeout)
+        client = Client(port=args.port, unit=args.unit, timeout=timeout)
 
         if args.echo:
             print(client.echo())

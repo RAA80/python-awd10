@@ -518,7 +518,7 @@ class AwdGui:
         logging.basicConfig(level=logging.DEBUG if self.varDebug.get() else logging.INFO)
 
         self.id_awd10 = Client(port=selected_port, unit=selected_unit,
-                               device=AWD10, timeout=self.varTimeout.get())
+                               timeout=self.varTimeout.get())
         if self.task:
             self.root.after_cancel(self.task)
             self.root.after_cancel(self.tick_task)
@@ -579,7 +579,7 @@ class AwdGui:
 
         for unit in range(1, 255):
             awd10 = Client(port=selected_port, unit=unit,
-                           device=AWD10, timeout=self.varTimeout.get())
+                           timeout=self.varTimeout.get())
             with contextlib.suppress(AwdProtocolError):
                 if awd10.echo():
                     iid = self.modulelist.insert("", "end", values=(unit, 9600))
