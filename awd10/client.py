@@ -4,6 +4,8 @@
 двигателем постоянного тока AWD10.
 """
 
+from __future__ import annotations
+
 import logging
 from enum import IntEnum
 
@@ -58,7 +60,7 @@ class Client:
         return f"{type(self).__name__}(port={self.port!r}, unit={self.unit})"
 
     @staticmethod
-    def _check_error(request: bytes, answer: bytes) -> bool:
+    def _check_error(request: bytes, answer: bytes) -> None:
         """Проверка возвращаемого значения на ошибку."""
 
         if len(answer) < 8:
@@ -70,10 +72,9 @@ class Client:
         if request[1] != answer[1]:
             msg = f"unit {answer[0]} error code {answer[1]:02X}"
             raise AwdProtocolError(msg)
-        return True
 
     @staticmethod
-    def _check_name(arg: str, name: str) -> dict:
+    def _check_name(arg: str, name: str) -> dict[str, int]:
         """Проверка названия параметра."""
 
         if name not in AWD10[arg]:
@@ -85,10 +86,8 @@ class Client:
     def _make_packet(self, command: int, param: int, data: int) -> bytes:
         """Формирование пакета для записи."""
 
-        packet = [self.unit, command, param, 0, *data.to_bytes(2, "big"), 0, 0]
-        packet[7] = -sum(packet) & 0xFF
-
-        return bytes(packet)
+        packet = [self.unit, command, param, 0, *data.to_bytes(2, "big"), 0]
+        return bytes([*packet, -sum(packet) & 0xFF])
 
     def _bus_exchange(self, packet: bytes) -> bytes:
         """Обмен по интерфейсу."""
@@ -131,7 +130,7 @@ class Client:
 
         return bool(self._send_message(CMD.EXEC_CMD, CMD.SETROT, speed & 0xFFFF))
 
-    def state(self) -> dict:        # п.2.5.4.4 и 2.5.4.5 документации
+    def state(self) -> dict[str, int | bool]:   # п.2.5.4.4 и 2.5.4.5 документации
         """Чтение состояния флагов режима работы платы."""
 
         answer = self._send_message(CMD.GET_PARAM, 0x1C, 0x0000)

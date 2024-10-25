@@ -1,12 +1,13 @@
 #! /usr/bin/env python3
 
-from __future__ import annotations
+"""Симулятор блока управления AWD10."""
 
 import argparse
 import logging
 from struct import error, unpack
 from threading import Thread
 from time import sleep
+from typing import Union
 
 from awd10.client import CMD
 from awd10.device import AWD10
@@ -14,6 +15,9 @@ from serial import Serial
 
 HIGH_LIMIT = 10000
 LOW_LIMIT = -10000
+
+PARAMETERS = dict[str, dict[str, int]]
+STATE = dict[str, Union[int, bool]]
 
 
 class SimAWD10:
@@ -24,14 +28,14 @@ class SimAWD10:
 
         self.answer = {"Address": 0, "Command": 0, "Param1": 0, "Param0": 0,
                        "Data1":   0, "Data0":   0, "Status": 0, "CS":     0}
-        self.state = {}
+        self.state: STATE = {}
         self.reset_state()
 
-        self.param = AWD10["param"]
+        self.param: PARAMETERS = AWD10["param"]
         [self.param[key].update(value=0) for key in self.param]
         self.param["Address"]["value"] = unit
 
-        self.result = AWD10["result"]
+        self.result: PARAMETERS = AWD10["result"]
         [self.result[key].update(value=0) for key in self.result]
 
         self.port = Serial(port=port, timeout=1)   # default 9600-8-N-1
@@ -154,21 +158,22 @@ class SimAWD10:
         self.answer["Data1"] = 0x00
         self.answer["Data0"] = 0x00
 
-    def get_param(self, arg: dict, command: int, param: int, key: str) -> None:
+    def get_param(self, arg: PARAMETERS, command: int, param: int, key: str) -> None:
         """Получение значения параметра по заданному ключу."""
 
         self.answer_header(command, param)
         self.answer["Data1"] = (arg[key]["value"] & 0xFF00) >> 8
         self.answer["Data0"] = arg[key]["value"] & 0x00FF
 
-    def set_param(self, arg: dict, command: int, param: int, key: str, value: int) -> None:
+    def set_param(self, arg: PARAMETERS, command: int, param: int, key: str,
+                        value: int) -> None:
         """Установка нового значения параметра по заданному ключу."""
 
         arg[key]["value"] = value
         self.get_param(arg, command, param, key)
 
     @staticmethod
-    def _search_key(arg: dict, value: int) -> str | None:
+    def _search_key(arg: PARAMETERS, value: int) -> Union[str, None]:
         """Поиск ключа по заданному коду."""
 
         return next((key for key in arg if value == arg[key]["code"]), None)
@@ -177,7 +182,7 @@ class SimAWD10:
 class Driver(Thread):
     """Класс, отвечающий за симуляцию перемещения двигателя."""
 
-    def __init__(self, state: dict, speed: int = 0) -> None:
+    def __init__(self, state: STATE, speed: int = 0) -> None:
         """Инициализация класса с указанными параметрами."""
 
         Thread.__init__(self)

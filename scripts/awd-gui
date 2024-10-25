@@ -424,7 +424,8 @@ class AwdGui:
     def Tick(self):
         self.tick_task = self.root.after(500, self.Tick)
 
-        if state := self.id_awd10.state():
+        try:
+            state = self.id_awd10.state()
             self.varConn.set(bool(state))
             self.checkConn.config(bg="green")
 
@@ -446,8 +447,8 @@ class AwdGui:
             self.varStInFrw.set(state["StInFrw"])
             self.varStLimRev.set(state["StLimRev"])
             self.varStLimFrw.set(state["StLimFrw"])
-        else:
-            self.varConn.set(bool(state))
+        except AwdProtocolError:
+            self.varConn.set(False)
             self.checkConn.config(bg="red")
 
             self.varFB.set(False)
