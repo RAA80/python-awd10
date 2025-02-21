@@ -3,7 +3,7 @@
 from setuptools import setup
 
 setup(name="python-awd10",
-      version="0.3.1",
+      version="0.4.0",
       description="AWD10 controllers library",
       url="https://github.com/RAA80/python-awd10",
       author="Alexey Ryadno",
@@ -21,7 +21,6 @@ setup(name="python-awd10",
                    "Operating System :: POSIX :: Linux",
                    "Operating System :: POSIX",
                    "Programming Language :: Python :: 3",
-                   "Programming Language :: Python :: 3.8",
                    "Programming Language :: Python :: 3.9",
                    "Programming Language :: Python :: 3.10",
                    "Programming Language :: Python :: 3.11",

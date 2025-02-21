@@ -4,17 +4,27 @@ import argparse
 import contextlib
 import logging
 
-from awd10.client import AwdProtocolError, Client
+from awd10.client import AwdSerialClient
 from awd10.device import AWD10
+from awd10.protocol import AwdProtocolError
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AWD10 command-line option")
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     description="AWD10 command-line option",
+                                     epilog="Usage example:\n"
+                                            "awd-console --port COM1 --scan\n"
+                                            "awd-console --port COM1 --unit 5 --echo\n"
+                                            "awd-console --port COM1 --unit 5 --get Address\n"
+                                            "awd-console --port COM1 --unit 5 --set Address 5\n"
+                                            "awd-console --port COM1 --unit 5 --move 100\n"
+                                            "awd-console --port COM1 --unit 5 --stop\n"
+                                            "awd-console --port COM1 --unit 5 --enrot\n"
+                                            "awd-console --port COM1 --unit 5 --state\n")
 
     parser.add_argument("--port", type=str, required=True,
-                                  help="select port name")
-    parser.add_argument("--timeout", type=float, nargs="?", metavar=("VALUE"),
-                                     const=0.1,
-                                     help="select timeout in seconds")
+                                  help="serial port name")
+    parser.add_argument("--timeout", type=float, default=1.0,
+                                     help="timeout in seconds")
     parser.add_argument("--debug", action="store_true",
                                    help="print debug information")
     group1 = parser.add_argument_group("Scanner")
@@ -22,7 +32,7 @@ if __name__ == "__main__":
                                   help="scan available modules")
     group2 = parser.add_argument_group("User")
     group2.add_argument("--unit", type=int,
-                                  help="select AWD10 address")
+                                  help="AWD10 address")
     group2_ex = group2.add_mutually_exclusive_group()
     group2_ex.add_argument("--echo", action="store_true",
                                      help="send ECHO request")
@@ -46,20 +56,18 @@ if __name__ == "__main__":
                                        help="read result value")
     args = parser.parse_args()
 
-    timeout = args.timeout or 0.1
-
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
     if args.scan:
         for unit in range(1, 256):
-            client = Client(port=args.port, unit=unit, timeout=timeout)
+            client = AwdSerialClient(port=args.port, unit=unit, timeout=args.timeout)
             with contextlib.suppress(AwdProtocolError):
                 if client.echo():
                     print(f"Unit: {unit} - OK")
             del client
     else:
-        client = Client(port=args.port, unit=args.unit, timeout=timeout)
+        client = AwdSerialClient(port=args.port, unit=args.unit, timeout=args.timeout)
 
         if args.echo:
             print(client.echo())

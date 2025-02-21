@@ -5,14 +5,13 @@
 import logging
 from time import sleep
 
-from awd10.client import Client
+from awd10.client import AwdSerialClient
 
 logging.basicConfig(level=logging.INFO)
 
 
 if __name__ == "__main__":
-    client = Client(port="COM1", unit=5)
-    print(client)
+    client = AwdSerialClient(port="COM1", unit=5, timeout=0.2)
 
     print(f"Move: {client.move(speed=100)}")
     sleep(5)
