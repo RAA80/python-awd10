@@ -10,7 +10,7 @@ import logging
 from enum import IntEnum
 from typing import TypedDict
 
-from .device import AWD10
+from awd10.device import AWD10
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())

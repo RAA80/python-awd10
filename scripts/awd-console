@@ -7,6 +7,7 @@ import logging
 from awd10.client import AwdSerialClient
 from awd10.device import AWD10
 from awd10.protocol import AwdProtocolError
+from serial import Serial
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -61,13 +62,16 @@ if __name__ == "__main__":
 
     if args.scan:
         for unit in range(1, 256):
-            client = AwdSerialClient(port=args.port, unit=unit, timeout=args.timeout)
+            transport = Serial(port=args.port, timeout=args.timeout)
+            client = AwdSerialClient(transport=transport, unit=unit)
+
             with contextlib.suppress(AwdProtocolError):
                 if client.echo():
                     print(f"Unit: {unit} - OK")
             del client
     else:
-        client = AwdSerialClient(port=args.port, unit=args.unit, timeout=args.timeout)
+        transport = Serial(port=args.port, timeout=args.timeout)
+        client = AwdSerialClient(transport=transport, unit=args.unit)
 
         if args.echo:
             print(client.echo())

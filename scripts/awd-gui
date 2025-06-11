@@ -9,6 +9,7 @@ from tkinter import ttk
 from awd10.client import AwdSerialClient
 from awd10.device import AWD10
 from awd10.protocol import AwdProtocolError
+from serial import Serial
 
 if os.name == "nt":                                 # sys.platform == 'win32':
     from serial.tools.list_ports_windows import comports
@@ -24,22 +25,19 @@ elif os.name == "posix":
         return [info
                 for info in [SysFS(d) for d in devices]
                 if info.subsystem != "platform"]    # hide non-present internal serial ports
-else:
-    msg = "No implementation for your platform available"
-    raise ImportError(msg)
 
 
 class CreateToolTip:
     """Create a tooltip for a given widget."""
 
-    def __init__(self, widget, text="widget info"):
+    def __init__(self, widget, text="widget info") -> None:
         self.widget = widget
         self.text = text
         self.tw = None
         self.widget.bind("<Enter>", self.Enter)
         self.widget.bind("<Leave>", self.Close)
 
-    def Enter(self, event=None):
+    def Enter(self, event=None) -> None:
         x = self.widget.winfo_rootx() + 25
         y = self.widget.winfo_rooty() + 20
 
@@ -52,13 +50,13 @@ class CreateToolTip:
 
         self.widget.after(3000, self.Close)
 
-    def Close(self, event=None):
+    def Close(self, event=None) -> None:
         if self.tw:
             self.tw.destroy()
 
 
 class AwdGui:
-    def __init__(self):
+    def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title("Программа управления контроллером AWD10")
 
@@ -387,26 +385,26 @@ class AwdGui:
 
         self.root.mainloop()
 
-    def __del__(self):
+    def __del__(self) -> None:
         if self.transport: del self.transport
         if self.id_awd10: del self.id_awd10
 
-    def Driver_Status(self, event):
+    def Driver_Status(self, event) -> None:
         key = self.varcombodriver.get()
 
         val = self.id_awd10.result(key)
         self.varCurValdriver.set(val)
 
-    def Button_Reset(self):
+    def Button_Reset(self) -> None:
         self.id_awd10.reset()
 
-    def Button_Stop(self):
+    def Button_Stop(self) -> None:
         self.id_awd10.stop()
 
-    def Button_Enrot(self):
+    def Button_Enrot(self) -> None:
         self.id_awd10.enrot()
 
-    def Button_Config(self):
+    def Button_Config(self) -> None:
         key = self.varcomboCode.get()
 
         if key == "BoardMode":
@@ -422,7 +420,7 @@ class AwdGui:
         else:
             self.id_awd10.set_param(key, int(self.spinValue.get()))
 
-    def Tick(self):
+    def Tick(self) -> None:
         self.tick_task = self.root.after(500, self.Tick)
 
         try:
@@ -471,11 +469,11 @@ class AwdGui:
             self.varStLimRev.set(False)
             self.varStLimFrw.set(False)
 
-    def Button_Move(self, sliderSpeed):
+    def Button_Move(self, sliderSpeed) -> None:
         speed = sliderSpeed.get()
         self.id_awd10.move(speed)
 
-    def Code_Selected(self, event=None):
+    def Code_Selected(self, event=None) -> None:
         index = self.comboCode.current()
         key = self.varcomboCode.get()
 
@@ -496,11 +494,11 @@ class AwdGui:
             self.mbMode.pack_forget()
             self.spinValue.pack(side="left", fill="x", padx=2)
 
-    def Port_Selected(self, event=None):
+    def Port_Selected(self, event=None) -> None:
         if len(self.port_iid) > 0:
             self.buttonScan.config(state="normal")
 
-    def Module_Selected(self, event=None):
+    def Module_Selected(self, event=None) -> None:
         selected_unit = selected_baudrate = None
 
         for item in self.modulelist.selection():
@@ -519,15 +517,16 @@ class AwdGui:
 
         logging.basicConfig(level=logging.DEBUG if self.varDebug.get() else logging.INFO)
 
-        self.id_awd10 = AwdSerialClient(port=selected_port, unit=selected_unit,
-                               timeout=self.varTimeout.get())
+        transport = Serial(port=selected_port, timeout=self.varTimeout.get())
+        self.id_awd10 = AwdSerialClient(transport=transport, unit=selected_unit)
+
         if self.task:
             self.root.after_cancel(self.task)
             self.root.after_cancel(self.tick_task)
 
         self.task = self.root.after_idle(self.Tick)
 
-    def Button_Scan(self):
+    def Button_Scan(self) -> None:
         if self.task:
             self.root.after_cancel(self.task)
             self.root.after_cancel(self.tick_task)
@@ -580,8 +579,8 @@ class AwdGui:
         logging.basicConfig(level=logging.DEBUG if self.varDebug.get() else logging.INFO)
 
         for unit in range(1, 255):
-            awd10 = AwdSerialClient(port=selected_port, unit=unit,
-                           timeout=self.varTimeout.get())
+            transport = Serial(port=selected_port, timeout=self.varTimeout.get())
+            awd10 = AwdSerialClient(transport=transport, unit=unit)
             with contextlib.suppress(AwdProtocolError):
                 if awd10.echo():
                     iid = self.modulelist.insert("", "end", values=(unit, 9600))

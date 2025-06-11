@@ -4,9 +4,14 @@
 двигателем постоянного тока AWD10.
 """
 
-from serial import Serial
+from __future__ import annotations
 
-from .protocol import Protocol
+from typing import TYPE_CHECKING
+
+from awd10.protocol import Protocol
+
+if TYPE_CHECKING:
+    from serial import Serial
 
 
 class AwdSerialClient(Protocol):
@@ -14,26 +19,26 @@ class AwdSerialClient(Protocol):
     постоянного тока AWD10.
     """
 
-    def __init__(self, port: str, unit: int, timeout: float = 1.0) -> None:
+    def __init__(self, transport: Serial, unit: int) -> None:
         """Инициализация класса клиента с указанными параметрами."""
 
         super().__init__(unit)
-        self.socket = Serial(port=port, timeout=timeout)    # default 9600-8-N-1
+        self.transport = transport
 
     def __del__(self) -> None:
         """Закрытие соединения с устройством при удалении объекта."""
 
-        if self.socket.is_open:
-            self.socket.close()
+        if self.transport.is_open:
+            self.transport.close()
 
     def _bus_exchange(self, packet: bytes) -> bytes:
         """Обмен по интерфейсу."""
 
-        self.socket.reset_input_buffer()
-        self.socket.reset_output_buffer()
+        self.transport.reset_input_buffer()
+        self.transport.reset_output_buffer()
 
-        self.socket.write(packet)
-        return self.socket.read(size=8)
+        self.transport.write(packet)
+        return self.transport.read(size=8)
 
 
 __all__ = ["AwdSerialClient"]
