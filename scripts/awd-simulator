@@ -49,9 +49,9 @@ class SimAWD10:
     def __del__(self) -> None:
         """Закрытие соединения с устройством при удалении объекта."""
 
-        if self.port.is_open:
+        if hasattr(self, "port"):
             self.port.close()
-        if self.drv:
+        if hasattr(self, "drv"):
             self.drv.stop = True
             self.drv.join()
 

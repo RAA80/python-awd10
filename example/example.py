@@ -5,15 +5,16 @@
 import logging
 from time import sleep
 
-from awd10.client import AwdSerialClient
-from serial import Serial
+from awd10.client import AwdDevice, AwdSerialTransport, AwdTcpTransport
 
 logging.basicConfig(level=logging.INFO)
 
 
 if __name__ == "__main__":
-    transport = Serial(port="COM5", timeout=0.2)    # default 9600-8-N-1
-    client = AwdSerialClient(transport=transport, unit=5)
+    transport = AwdSerialTransport(address="COM5", timeout=0.2)
+    # transport = AwdTcpTransport(address="192.168.0.100:4002", timeout=0.2)
+
+    client = AwdDevice(transport=transport, unit=5)
 
     print(f"Move: {client.move(speed=100)}")
     sleep(5)

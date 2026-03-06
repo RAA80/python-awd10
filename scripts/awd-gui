@@ -6,10 +6,9 @@ import os
 import tkinter as tk
 from tkinter import ttk
 
-from awd10.client import AwdSerialClient
+from awd10.client import AwdDevice, AwdSerialTransport
 from awd10.device import AWD10
 from awd10.protocol import AwdProtocolError
-from serial import Serial
 
 if os.name == "nt":                                 # sys.platform == 'win32':
     from serial.tools.list_ports_windows import comports
@@ -517,8 +516,8 @@ class AwdGui:
 
         logging.basicConfig(level=logging.DEBUG if self.varDebug.get() else logging.INFO)
 
-        transport = Serial(port=selected_port, timeout=self.varTimeout.get())
-        self.id_awd10 = AwdSerialClient(transport=transport, unit=selected_unit)
+        transport = AwdSerialTransport(address=selected_port, timeout=self.varTimeout.get())
+        self.id_awd10 = AwdDevice(transport=transport, unit=selected_unit)
 
         if self.task:
             self.root.after_cancel(self.task)
@@ -579,15 +578,15 @@ class AwdGui:
         logging.basicConfig(level=logging.DEBUG if self.varDebug.get() else logging.INFO)
 
         for unit in range(1, 255):
-            transport = Serial(port=selected_port, timeout=self.varTimeout.get())
-            awd10 = AwdSerialClient(transport=transport, unit=unit)
+            transport = AwdSerialTransport(address=selected_port, timeout=self.varTimeout.get())
+            awd10 = AwdDevice(transport=transport, unit=unit)
             with contextlib.suppress(AwdProtocolError):
                 if awd10.echo():
                     iid = self.modulelist.insert("", "end", values=(unit, 9600))
                     self.module_iid.append(iid)
             self.root.update()
 
-            del awd10
+            del awd10, transport
             self.progressbar.step(1)
 
         print(f"Stop scanning port {selected_port}")
